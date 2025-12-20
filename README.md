@@ -5,7 +5,7 @@ AI Dungeon script that tracks player outfits from input and output text, with op
 ## Features
 
 - Outfit tracking by category (dynamic categories allowed).
-- Input parsing for natural actions (put on, take off).
+- Command-driven outfit tracking.
 - Story card persistence for settings and outfit.
 - Immersive D20 outcomes for `try`/`attempt` actions.
 
@@ -28,7 +28,11 @@ Copy each file into the matching AI Dungeon script tab:
 Outfit:
 
 - `/undress`
+- `/reloadoutfit`
+- `/outfit`
+- `/remove "Item"` (exact match)
 - `/wear <category> "Item"`
+- `/wear <category>` (creates an empty category)
 - `/takeoff <category> "Item"`
 - `/takeoff <category>` (clears everything in that category)
 Categories should be unquoted (e.g., `/takeoff tops`, not `/takeoff "tops"`).
@@ -39,11 +43,15 @@ Categories are flexible. If you use a new category (e.g., `hands`), it is create
 
 Outfit input:
 
-- wear body "T-shirt"
-- /wear head "green hat"
-- takeoff body
-- takeoff head
+- /wear layer "T-shirt"
+- /wear accessory "green hat"
+- /takeoff layer
+- /takeoff accessory
 - /undress
+- /reloadoutfit
+- /wear gloves
+- /outfit
+- /remove "green hat"
 
 ## Story Cards
 
@@ -61,8 +69,11 @@ Edit the `CI Settings` entry to control behavior:
 
 ## Notes
 
-- Input parsing ignores dialogue lines like "You say...".
+- Only explicit commands update outfits (slash commands at the start of input).
 - Outfit categories are stored as text labels and shown in title case.
+- Use `Empty` as the item list to keep a category with no items.
+- Add category aliases in `CI Settings` like `alias boots = feet`.
+- `/remove "Item"` removes exact matches across all categories.
 - Author's Note injection is wrapped in a `[CI State]` block to prevent duplicates.
 - Immersive D20 triggers on lines with `try/tries/trying/attempt/attempts/attempting` (optionally prefixed with `>`), and keeps results stable on retries.
 
@@ -71,9 +82,9 @@ Edit the `CI Settings` entry to control behavior:
 You can set a default outfit in Plot Essentials using:
 
 ```
-Outfit: Tops: White Shirt; Bottoms: Jeans; Footwear: Sneakers
+Outfit: Layer: White Shirt; Bottom: Jeans; Feet: Sneakers
 ```
 
 Categories are open-ended; any `Category: items` line under `Outfit:` is accepted.
 If the outfit entry is empty, the script uses this default.
-Limitation: the `Outfit:` block ends at the next blank line. The script only removes the block if that blank line exists, so include one if you want the `Outfit:` lines removed after loading.
+Limitation: the `Outfit:` block ends at the next blank line.

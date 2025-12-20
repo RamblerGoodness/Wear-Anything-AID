@@ -3,9 +3,9 @@
 // Every script needs a modifier function
 const modifier = (text) => {
   try {
-    //text = oracleInput(text).text;
-    text = betterSay(text).text;
+    text = oracleInput(text).text;
     text = CI_Input(text);
+    text = betterSay(text).text;
     return { text };
   } catch (err) {
     return { text };
@@ -13,7 +13,10 @@ const modifier = (text) => {
 };
 
 function isOutfitCommandText(text) {
-  return /^\s*(?:You\s+|I\s+)?\/?(?:wear|takeoff|undress|start|end)\b/i.test(text || "");
+  if (!text) {
+    return false;
+  }
+  return /^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/(?:wear|takeoff|undress|reloadoutfit|outfit|remove)\b/i.test(text);
 }
 
 function oracleInput(text) {
@@ -23,12 +26,16 @@ function oracleInput(text) {
   if (isOutfitCommandText(text)) {
     return { text };
   }
+  const attemptRegex = /(?:^|\n)\s*>?\s*(.*)\b(try|tries|trying|attempt|attempts|attempting)\b/i;
+  if (!attemptRegex.test(text)) {
+    return { text };
+  }
   const Success = 0.5; // higher means less chance to succeed
   const Barely = Success + 0.2; // higher means higher chance of barely success
   const CritSuccess = 0.9; // higher means less chance for a crit success
   const CritFail = 0.1; // higher means higher chance of a crit failure
   const outcome = (v, w, s) =>
-    (w = text.match(/(?:^|\n)\s*>?\s*(.*)\b(try|tries|trying|attempt|attempts|attempting)\b/i)) &&
+    (w = text.match(attemptRegex)) &&
     !((w[1].match(/"/g) ?? []).length % 2)
       ? ((s = v > Success) ? "And " : "But ") +
         w[1].replace(/^You\b/, "you").replace(/,$/, " and") +

@@ -18,7 +18,6 @@ function CI_Library() {
 // Input Hook
 function CI_Input(text) {
   initCI();
-  text = scriptToggle(text);
   const ci = state.ci;
   if (!ci.enabled) {
     return text;
@@ -38,11 +37,6 @@ function CI_Input(text) {
     storeOutfitToSC();
     storeSettingsToSC();
     return outfitCommandResult.text;
-  }
-
-  const outfitChanged = inferOutfitItemsFromInput(text);
-  if (outfitChanged) {
-    storeOutfitToSC();
   }
 
   return text;
@@ -98,6 +92,12 @@ function initCI() {
   if (!ci.userList) {
     ci.userList = [];
   }
+  if (!ci.aliases) {
+    ci.aliases = {};
+  }
+  if (ci.outfitsLoaded === undefined) {
+    ci.outfitsLoaded = false;
+  }
 }
 
 function createSettingsCard() {
@@ -109,9 +109,12 @@ function createSettingsCard() {
       "Settings:",
       "enabled = true|false",
       "injectToAN = true|false",
+      "alias boots = feet",
       "",
       "Commands:",
-      "/start, /end",
+      "/reloadoutfit",
+      "/outfit",
+      "/remove \"Item\"",
       "/undress",
       "/wear <category> \"Item\"",
       "/takeoff <category> \"Item\""
@@ -137,6 +140,7 @@ function loadSettingsFromSC() {
     return;
   }
   const ci = state.ci;
+  ci.aliases = {};
   const enabledMatch = settingsSC.entry.match(/enabled\s*=\s*(true|false)/i);
   if (enabledMatch) {
     ci.enabled = enabledMatch[1].toLowerCase() === "true";
@@ -145,6 +149,7 @@ function loadSettingsFromSC() {
   if (injectMatch) {
     ci.injectToAN = injectMatch[1].toLowerCase() === "true";
   }
+  parseAliasSettings(settingsSC.entry);
 }
 
 function getUserIdPE() {
@@ -171,18 +176,7 @@ function isCommandText(text) {
   if (!text) {
     return false;
   }
-  if (/(?:^|\s)\/?(?:wear|takeoff|undress|start|end)\b/i.test(text)) {
-    return true;
-  }
-  return !/\bsay\b/i.test(text);
-}
-
-function isDialogueText(text) {
-  if (!text) {
-    return false;
-  }
-  const dialogueRegex = /(?:^|[.!?]\s+)(You|I)\s+(say|said|ask|asked|tell|told|reply|replied|state|stated|note|noted|claim|claimed|remark|remarked|mutter|muttered|insist|insisted|whisper|whispered|mention|mentioned|declare|declared|respond|responded|warn|warned|see|saw|hear|heard|add|added)\b/i;
-  return dialogueRegex.test(text);
+  return /^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/(?:wear|takeoff|undress|reloadoutfit|outfit|remove)\b/i.test(text);
 }
 
 function addUser(id) {
@@ -206,34 +200,46 @@ function getPrimaryUser() {
 // ------------------------------
 // Commands
 // ------------------------------
-function scriptToggle(text) {
-  if (!text) {
-    return text;
-  }
-  const ci = state.ci;
-  if (ci.enabled === false && text.includes("/start")) {
-    ci.enabled = true;
-    return "\n<< Outfit System Unlocked >>";
-  }
-  if (ci.enabled === true && text.includes("/end")) {
-    ci.enabled = false;
-    return "\n<< Outfit System Locked >>";
-  }
-  return text;
-}
-
 function handleOutfitCommands(text) {
   if (!isCommandText(text)) {
     return { handled: false, text };
   }
 
-  if (text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/?undress\b/i)) {
+  if (text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/reloadoutfit\b/i)) {
+    const ci = state.ci;
+    ci.outfitsLoaded = false;
+    retrieveOutfitsFromSC();
+    storeOutfitToSC();
+    return { handled: true, text: "<< Outfit state reloaded >>" };
+  }
+
+  if (text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/outfit\b/i)) {
+    const user = getPrimaryUser();
+    return { handled: true, text: buildOutfitSummary(user) };
+  }
+
+  const removeMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/remove\s+(.+)/i);
+  if (removeMatch) {
+    const itemText = removeMatch[1].trim();
+    const item = itemText.replace(/^"(.*)"$/g, "$1").replace(/^'(.*)'$/g, "$1").trim();
+    if (!item) {
+      return { handled: true, text: "<< Missing outfit item >>" };
+    }
+    const user = getPrimaryUser();
+    const removed = removeOutfitItemAny(user, item);
+    if (removed) {
+      return { handled: true, text: `<< Removed ${item} >>` };
+    }
+    return { handled: true, text: `<< ${item} not found >>` };
+  }
+
+  if (text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/undress\b/i)) {
     const user = getPrimaryUser();
     clearOutfit(user);
     return { handled: true, text: "You strip out of your clothes.\n<< You are now undressed >>" };
   }
 
-  const match = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/?(wear|takeoff)\s+(.+)/i);
+  const match = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/(wear|takeoff)\s+(.+)/i);
   if (!match) {
     return { handled: false, text };
   }
@@ -243,6 +249,7 @@ function handleOutfitCommands(text) {
   const parsed = parseOutfitCommandArgs(rawArgs);
   const categoryInput = parsed.category;
   const rawItem = parsed.item;
+  const itemWasQuoted = parsed.itemWasQuoted;
   const user = getPrimaryUser();
   const category = normalizeOutfitCategory(categoryInput);
 
@@ -260,6 +267,28 @@ function handleOutfitCommands(text) {
     if (fallbackCategory) {
       clearOutfitCategory(user, fallbackCategory);
       return { handled: true, text: `<< Cleared ${fallbackCategory} >>` };
+    }
+  }
+
+  if (action === "wear" && category && itemWasQuoted && rawItem === "") {
+    const outfit = getOutfit(user);
+    if (!outfit[category]) {
+      outfit[category] = [];
+    }
+    return { handled: true, text: `<< Added empty category: ${category} >>` };
+  }
+
+  if (action === "wear" && !category && rawItem && !itemWasQuoted) {
+    const parts = rawArgs.trim().split(/\s+/);
+    if (parts.length === 1) {
+      const singleCategory = normalizeOutfitCategory(rawItem);
+      if (singleCategory) {
+        const outfit = getOutfit(user);
+        if (!outfit[singleCategory]) {
+          outfit[singleCategory] = [];
+        }
+        return { handled: true, text: `<< Added empty category: ${singleCategory} >>` };
+      }
     }
   }
 
@@ -303,7 +332,7 @@ function handleOutfitCommands(text) {
 }
 
 function parseOutfitCommandArgs(raw) {
-  const result = { category: "", item: "" };
+  const result = { category: "", item: "", itemWasQuoted: false };
   if (!raw) {
     return result;
   }
@@ -312,13 +341,14 @@ function parseOutfitCommandArgs(raw) {
     return result;
   }
 
-  const quoteMatches = [...text.matchAll(/"([^"]+)"/g)];
+  const quoteMatches = [...text.matchAll(/"([^"]*)"/g)];
   if (quoteMatches.length > 0) {
     const lastQuote = quoteMatches[quoteMatches.length - 1];
-    const item = lastQuote[1].trim();
+    const item = lastQuote[1];
     const before = text.slice(0, lastQuote.index).trim();
     result.category = before.replace(/\s+$/, "").trim();
     result.item = item;
+    result.itemWasQuoted = true;
     return result;
   }
 
@@ -347,15 +377,10 @@ function createIfNoOutfitSC() {
       outfitSC.keys = `Outfit story card for ${usr}. Edit the entry to change items.`;
       outfitSC.description = [
         "Format:",
-        "Outerwear: item1, item2",
-        "Tops: item1",
-        "Bottoms: item1",
-        "Footwear: item1",
-        "Accessories: item1",
-        "Headwear: item1",
-        "Undergarments: item1",
+        "Category: item1, item2",
         "",
-        "Leave a category blank or omit it to remove items."
+        "Use Empty to show a category with no items.",
+        "Omit a category to remove it."
       ].join("\n");
       outfitSC.entry = "Empty";
     }
@@ -364,6 +389,9 @@ function createIfNoOutfitSC() {
 
 function retrieveOutfitsFromSC() {
   const ci = state.ci;
+  if (ci.outfitsLoaded) {
+    return;
+  }
   ci.userList.forEach(usr => {
     const outfitSC = storyCards.find(sc => sc.title === `${usr}'s Outfit`);
     if (!outfitSC) {
@@ -382,26 +410,27 @@ function retrieveOutfitsFromSC() {
       storeOutfitToSC();
     }
   });
+  ci.outfitsLoaded = true;
 }
 
 function storeOutfitToSC() {
   const ci = state.ci;
-  const defaultCategories = [
-    "outerwear", "tops", "bottoms", "footwear", "accessories", "headwear", "undergarments"
-  ];
   ci.userList.forEach(usr => {
     const outfitSC = storyCards.find(sc => sc.title === `${usr}'s Outfit`);
     if (!outfitSC) {
       return;
     }
-    const dynamicCategories = Object.keys(ci.users[usr].outfit || {});
-    const outfitCategories = Array.from(new Set(defaultCategories.concat(dynamicCategories))).sort();
+    const outfitCategories = Object.keys(ci.users[usr].outfit || {}).sort();
+    if (outfitCategories.length === 0) {
+      outfitSC.entry = "Empty";
+      return;
+    }
     outfitSC.entry = outfitCategories.map(category => {
       const itemsArray = ci.users[usr].outfit[category];
       const label = formatCategoryLabel(category);
-      const itemsString = (itemsArray && itemsArray.length > 0)
+    const itemsString = (itemsArray && itemsArray.length > 0)
         ? itemsArray.join(", ")
-        : `No ${label}`;
+        : "Empty";
       return `${label}: ${itemsString}`;
     }).join("\n");
   });
@@ -421,7 +450,7 @@ function parseOutfitEntry(entry) {
     }
     const category = normalizeOutfitCategory(match[1]);
     const itemsString = match[2].trim();
-    if (!itemsString || itemsString.toLowerCase().startsWith("no ")) {
+    if (!itemsString || itemsString.toLowerCase() === "empty" || itemsString.toLowerCase().startsWith("no ")) {
       return;
     }
     const items = itemsString.split(",").map(item => item.trim()).filter(Boolean);
@@ -596,100 +625,6 @@ function formatOutfitLine(user) {
   return `Assume player is wearing ${outfitString}.`;
 }
 
-function inferOutfitItemsFromInput(text) {
-  if (!isCommandText(text)) {
-    return false;
-  }
-  const user = getPrimaryUser();
-  const events = parseOutfitItemEvents(text);
-  if (events.length === 0) {
-    return false;
-  }
-  events.forEach(ev => {
-    if (ev.type === "add") {
-      addOutfitItem(user, ev.item);
-    } else if (ev.type === "remove") {
-      removeOutfitItem(user, ev.item);
-    }
-  });
-  return true;
-}
-
-function parseOutfitItemEvents(text) {
-  const events = [];
-  const sentences = text.match(/[^.?!]+[.?!]?/g) || [];
-  const addVerbs = ["put on", "wear", "wearing", "don", "donned", "equip", "pull on"];
-  const removeVerbs = ["take off", "remove", "unequip", "doff", "strip off"];
-
-  sentences.forEach(sentence => {
-    const s = sentence.trim();
-    if (!/^(You|I)\b/i.test(s)) {
-      return;
-    }
-    if (isDialogueText(s)) {
-      return;
-    }
-    const addMatch = s.match(new RegExp(`\\b(?:${addVerbs.join("|")})\\b\\s+(.*)`, "i"));
-    if (addMatch) {
-      const items = parseItemList(addMatch[1], true);
-      items.forEach(item => {
-        if (item.item) {
-          events.push({ type: "add", item: item.item });
-        }
-      });
-      return;
-    }
-    const removeMatch = s.match(new RegExp(`\\b(?:${removeVerbs.join("|")})\\b\\s+(.*)`, "i"));
-    if (removeMatch) {
-      const items = parseItemList(removeMatch[1], true);
-      items.forEach(item => {
-        if (item.item) {
-          events.push({ type: "remove", item: item.item });
-        }
-      });
-    }
-  });
-
-  return events;
-}
-
-function addOutfitItem(user, item) {
-  const outfit = getOutfit(user);
-  const category = categorizeOutfitItem(item);
-  if (!category) {
-    return;
-  }
-  if (!outfit[category]) {
-    outfit[category] = [];
-  }
-  const normalized = normalizeItemName(item);
-  if (!normalized) {
-    return;
-  }
-  const exists = outfit[category].some(i => normalizeItemName(i).toLowerCase() === normalized.toLowerCase());
-  if (!exists) {
-    outfit[category].push(normalized);
-  }
-}
-
-function removeOutfitItem(user, item) {
-  const outfit = getOutfit(user);
-  const category = categorizeOutfitItem(item);
-  if (!category || !outfit[category]) {
-    return;
-  }
-  const normalized = normalizeItemName(item).toLowerCase();
-  if (!normalized) {
-    return;
-  }
-  const index = outfit[category].findIndex(i => {
-    const n = normalizeItemName(i).toLowerCase();
-    return n === normalized || n.includes(normalized) || normalized.includes(n);
-  });
-  if (index !== -1) {
-    outfit[category].splice(index, 1);
-  }
-}
 
 function addOutfitItemWithCategory(user, category, item) {
   const outfit = getOutfit(user);
@@ -723,7 +658,7 @@ function clearOutfitCategory(user, category) {
   if (!outfit[category]) {
     return;
   }
-  outfit[category] = [];
+  delete outfit[category];
 }
 
 function clearOutfit(user) {
@@ -764,11 +699,89 @@ function categorizeOutfitItem(item) {
 }
 
 function normalizeOutfitCategory(category) {
+  const alias = resolveOutfitAlias(category);
+  if (alias) {
+    return alias;
+  }
   const mapped = lookupOutfitCategory(category);
   if (mapped) {
     return mapped;
   }
   return sanitizeCategory(category);
+}
+
+function resolveOutfitAlias(category) {
+  if (!category) {
+    return null;
+  }
+  const ci = state.ci || {};
+  const aliases = ci.aliases || {};
+  const key = normalizeAliasKey(category);
+  const target = aliases[key];
+  if (!target) {
+    return null;
+  }
+  return sanitizeCategory(target);
+}
+
+function normalizeAliasKey(raw) {
+  if (!raw) {
+    return "";
+  }
+  return raw.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function parseAliasSettings(entry) {
+  const lines = entry.split("\n");
+  lines.forEach(line => {
+    const match = line.match(/^\s*alias\s+(.+?)\s*=\s*(.+)\s*$/i);
+    if (!match) {
+      return;
+    }
+    const aliasKey = normalizeAliasKey(match[1]);
+    const category = sanitizeCategory(match[2]);
+    if (!aliasKey || !category) {
+      return;
+    }
+    state.ci.aliases[aliasKey] = category;
+  });
+}
+
+function buildOutfitSummary(user) {
+  const outfit = getOutfit(user);
+  const categories = Object.keys(outfit).sort();
+  if (categories.length === 0) {
+    return "<< Outfit is empty >>";
+  }
+  const lines = categories.map(category => {
+    const items = outfit[category] || [];
+    const label = formatCategoryLabel(category);
+    const itemsString = items.length > 0 ? items.join(", ") : "Empty";
+    return `${label}: ${itemsString}`;
+  });
+  return ["<< Outfit >>", ...lines].join("\n");
+}
+
+function removeOutfitItemAny(user, item) {
+  const outfit = getOutfit(user);
+  const normalized = normalizeItemName(item).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  let removed = false;
+  Object.keys(outfit).forEach(category => {
+    const items = outfit[category] || [];
+    const nextItems = items.filter(i => {
+      const n = normalizeItemName(i).toLowerCase();
+      const match = n === normalized;
+      if (match) {
+        removed = true;
+      }
+      return !match;
+    });
+    outfit[category] = nextItems;
+  });
+  return removed;
 }
 
 function lookupOutfitCategory(category) {
@@ -809,13 +822,6 @@ function sanitizeCategory(category) {
   }
   const cleaned = category.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
   return cleaned || null;
-}
-
-function normalizeCategoryKey(raw) {
-  if (!raw) {
-    return "";
-  }
-  return raw.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function formatCategoryLabel(category) {
@@ -887,8 +893,4 @@ function parseQuantityToken(token) {
     ten: 10
   };
   return map[lower] || null;
-}
-
-function escapeRegExp(text) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
