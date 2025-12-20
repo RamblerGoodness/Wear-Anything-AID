@@ -18,10 +18,10 @@ AI Dungeon script that tracks player outfits from input and output text, with op
 
 Copy each file into the matching AI Dungeon script tab:
 
-- `Outfit-Inventory-System/Input.js` -> Input
-- `Outfit-Inventory-System/Context.js` -> Context
-- `Outfit-Inventory-System/Output.js` -> Output
-- `Outfit-Inventory-System/Library.js` -> Library
+- `scr/Input.js` -> Input
+- `scr/Context.js` -> Context
+- `scr/Output.js` -> Output
+- `scr/Library.js` -> Library
 
 ## Commands
 
