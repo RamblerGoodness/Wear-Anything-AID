@@ -39,9 +39,11 @@ Categories are flexible. If you use a new category (e.g., `hands`), it is create
 
 Outfit input:
 
-- `/do I put on a helmet and gloves.`
-- `/do /wear upper body "vest"`
-- `/do /takeoff headwear "Iron Helmet"`
+- wear body "T-shirt"
+- /wear head "green hat"
+- takeoff body
+- takeoff head
+- /undress
 
 ## Story Cards
 
