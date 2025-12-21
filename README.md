@@ -7,12 +7,14 @@ AI Dungeon script that tracks player outfits from input and output text, with op
 - Outfit tracking by category (dynamic categories allowed).
 - Command-driven outfit tracking.
 - Story card persistence for settings and outfit.
+- World Time Generator (WTG 2.0) with auto card support.
 - Immersive D20 outcomes for `try`/`attempt` actions.
 
 ## Included Scripts
 
 - Immersive D20 (original by SlumberingMage): <https://github.com/SlumberingMage/AID-Oracle/blob/main/distribution/oracle-lite-1.1-input.js>
 - Better Say Action <https://discord.com/channels/903327676884979802/1381678302238081158/1381678302238081158>
+- World Time Generator 2.0 (Auto Cards): <https://github.com/thisisasetuptomyrap-cmyk/World-Time-Generator-2.0>
 
 ## Install
 
@@ -59,6 +61,11 @@ The script creates these story cards if missing:
 
 - `CI Settings`: config values and command reference.
 - `[User]'s Outfit`: outfit entries by category.
+- `Default Outfit`: default outfit template for new users.
+- `Current Date and Time`: WTG state and commands.
+- `WTG Data`: internal WTG tracking.
+- `WTG Cooldowns`: internal WTG cooldowns.
+- `World Time Generator Settings`: WTG settings.
 
 ## Settings (CI Settings card)
 
@@ -77,14 +84,15 @@ Edit the `CI Settings` entry to control behavior:
 - Author's Note injection is wrapped in a `[CI State]` block to prevent duplicates.
 - Immersive D20 triggers on lines with `try/tries/trying/attempt/attempts/attempting` (optionally prefixed with `>`), and keeps results stable on retries.
 
-## Plot Essentials
+## Default Outfit
 
-You can set a default outfit in Plot Essentials using:
+Set a default outfit in the `Default Outfit` story card using:
 
 ```txt
-Outfit: Layer: White Shirt; Bottom: Jeans; Feet: Sneakers
+Layer: White Shirt
+Bottom: Jeans
+Feet: Sneakers
 ```
 
-Categories are open-ended; any `Category: items` line under `Outfit:` is accepted.
-If the outfit entry is empty, the script uses this default.
-Limitation: the `Outfit:` block ends at the next blank line.
+Categories are open-ended; any `Category: items` line is accepted.
+If the outfit entry is empty, the script uses no default outfit.
