@@ -103,6 +103,25 @@ function WTG_Output(text) {
     return ensureLeadingSpace(modifiedText);
   }
 
+  const isDescribeTurn = state.ci && state.ci.pendingDescribe;
+
+  const focusTags = extractFocusTags(text);
+  if (focusTags.length > 0) {
+    const data = getFocusData();
+    focusTags.forEach(tag => {
+      const list = data[tag.type] || [];
+      const existingIndex = list.findIndex(entry => entry.name.toLowerCase() === tag.name.toLowerCase());
+      let pinned = false;
+      if (existingIndex >= 0) {
+        pinned = list[existingIndex].pinned;
+        list.splice(existingIndex, 1);
+      }
+      list.unshift({ name: tag.name, pinned });
+      data[tag.type] = pruneFocusList(list);
+    });
+    saveFocusData(data);
+  }
+
   // Get the last action from history to determine action type
   let lastAction = null;
   let actionType = "continue"; // Default to continue if no player action found
@@ -235,6 +254,8 @@ function WTG_Output(text) {
       .trim();
   }
 
+  modifiedText = stripFocusTags(modifiedText);
+
   // Process any existing turn time marker in the text
   const ttMatch = modifiedText.match(/\[\[(.*?)\]\]$/);
   let parsedTT = ttMatch ? parseTurnTime(ttMatch[1]) : null;
@@ -269,8 +290,12 @@ function WTG_Output(text) {
     }
   }
 
+  if (isDescribeTurn) {
+    minutesToAdd = 0;
+  }
+
   // Update turn time based on character count if starting time is not descriptive and no command was processed
-  if (!timeAdjustedByCommand && state.startingTime !== 'Unknown' && minutesToAdd > 0) {
+  if (!isDescribeTurn && !timeAdjustedByCommand && state.startingTime !== 'Unknown' && minutesToAdd > 0) {
     state.turnTime = addToTurnTime(state.turnTime, {minutes: minutesToAdd});
     const {currentDate, currentTime} = computeCurrent(state.startingDate, state.startingTime, state.turnTime);
     state.currentDate = currentDate;
@@ -283,7 +308,7 @@ function WTG_Output(text) {
 
   // Collect trigger mentions for turn data (only after proper time is set)
   let triggerMentions = [];
-  if (modifiedText.trim() && state.currentDate !== '01/01/1900' && state.currentTime !== 'Unknown') {
+  if (!isDescribeTurn && modifiedText.trim() && state.currentDate !== '01/01/1900' && state.currentTime !== 'Unknown') {
     const responseText = modifiedText.toLowerCase();
 
     // Check all storycards for trigger matches in AI response
@@ -384,7 +409,7 @@ function WTG_Output(text) {
   };
 
   // If we found a player action and it's not a continue, add turn data to WTG Data storycard
-  if (lastAction && actionType !== "continue") {
+  if (!isDescribeTurn && lastAction && actionType !== "continue") {
     // Extract action + first 2 sentences from AI response for better consistency
     const responseSnippet = extractFirstTwoSentences(modifiedText);
 
@@ -399,7 +424,7 @@ function WTG_Output(text) {
   }
 
   // Independent mention detection for timestamp injection on existing cards (even if generation disabled)
-  if (!getWTGBooleanSetting("Disable WTG Entirely")) {
+  if (!isDescribeTurn && !getWTGBooleanSetting("Disable WTG Entirely")) {
     const fullText = (lastAction ? lastAction.text : '') + ' ' + text;
     const recentHistoryText = history.slice(-5).map(h => h.text).join(' '); // Last 5 actions
     const scanText = fullText + ' ' + recentHistoryText;
@@ -430,7 +455,7 @@ function WTG_Output(text) {
   }
   
   // Check if we should update storycards with timestamps for newly mentioned elements
-  if (lastAction) {
+  if (!isDescribeTurn && lastAction) {
     // Update timestamp for Current Date and Time card
     const dateTimeCard = storyCards.find(card => card.title === "Current Date and Time");
     if (dateTimeCard) {
@@ -439,7 +464,7 @@ function WTG_Output(text) {
   }
 
   // Update the Current Date and Time storycard if needed
-  if (state.changed || info.actionCount === 1 || info.actionCount % 5 === 0) {
+  if (!isDescribeTurn && (state.changed || info.actionCount === 1 || info.actionCount % 5 === 0)) {
     updateDateTimeCard();
     delete state.changed;
   }

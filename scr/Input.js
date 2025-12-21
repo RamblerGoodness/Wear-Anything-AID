@@ -6,7 +6,9 @@ const modifier = (text) => {
     text = WTG_Input(text);
     text = oracleInput(text).text;
     text = CI_Input(text);
-    text = betterSay(text).text;
+    if (!(state.ci && state.ci.pendingDescribe)) {
+      text = betterSay(text).text;
+    }
     return { text };
   } catch (err) {
     return { text };
@@ -195,6 +197,24 @@ function WTG_Input(text) {
   // Add messages to modified text
   if (messages.length > 0) {
     modifiedText = messages.join("\n") + (modifiedText ? "\n" + modifiedText : "");
+  }
+
+  const focusTags = extractFocusTags(modifiedText);
+  if (focusTags.length > 0) {
+    const data = getFocusData();
+    focusTags.forEach(tag => {
+      const list = data[tag.type] || [];
+      const existingIndex = list.findIndex(entry => entry.name.toLowerCase() === tag.name.toLowerCase());
+      let pinned = false;
+      if (existingIndex >= 0) {
+        pinned = list[existingIndex].pinned;
+        list.splice(existingIndex, 1);
+      }
+      list.unshift({ name: tag.name, pinned });
+      data[tag.type] = pruneFocusList(list);
+    });
+    saveFocusData(data);
+    modifiedText = stripFocusTags(modifiedText);
   }
 
   // Detect triggers in player input and track mentions (only after proper time is set)

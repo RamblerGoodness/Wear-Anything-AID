@@ -24,6 +24,12 @@ function CI_Input(text) {
     return text;
   }
 
+  if (ci.pendingDescribe && ci.pendingDescribeAge !== info.actionCount) {
+    ci.pendingDescribe = null;
+    ci.pendingDescribeMessage = null;
+    ci.pendingDescribeAge = null;
+  }
+
   ensureDefaultUser();
   createIfNoOutfitSC();
   retrieveOutfitsFromSC();
@@ -37,6 +43,12 @@ function CI_Input(text) {
   if (outfitCommandResult.handled) {
     storeOutfitToSC();
     storeSettingsToSC();
+    if (outfitCommandResult.aiPrompt) {
+      state.ci.pendingDescribe = outfitCommandResult.pendingDescribe;
+      state.ci.pendingDescribeMessage = outfitCommandResult.text;
+      state.ci.pendingDescribeAge = info.actionCount;
+      return outfitCommandResult.aiPrompt;
+    }
     state.message = outfitCommandResult.text;
     state.ci.suppressNextOutput = true;
     return " ";
@@ -69,6 +81,15 @@ function CI_Output(text) {
   if (ci.suppressNextOutput) {
     ci.suppressNextOutput = false;
     return state.message || text;
+  }
+
+  if (ci.pendingDescribe) {
+    const result = applyPendingDescription(text);
+    ci.pendingDescribe = null;
+    const message = ci.pendingDescribeMessage || "<< Updated >>";
+    ci.pendingDescribeMessage = null;
+    ci.pendingDescribeAge = null;
+    return message || result;
   }
 
   ensureDefaultUser();
@@ -106,6 +127,27 @@ function initCI() {
   if (ci.outfitsLoaded === undefined) {
     ci.outfitsLoaded = false;
   }
+  if (ci.focusMaxEntries === undefined) {
+    ci.focusMaxEntries = DEFAULT_FOCUS_MAX_ENTRIES;
+  }
+  if (ci.autoDescribeOnPromote === undefined) {
+    ci.autoDescribeOnPromote = true;
+  }
+  if (ci.describeTurns === undefined) {
+    ci.describeTurns = 3;
+  }
+  if (ci.describeMaxSentences === undefined) {
+    ci.describeMaxSentences = 3;
+  }
+  if (ci.describeMaxChars === undefined) {
+    ci.describeMaxChars = 420;
+  }
+  if (!ci.describeMode) {
+    ci.describeMode = "overwrite";
+  }
+  if (ci.describeOnlyIfEmpty === undefined) {
+    ci.describeOnlyIfEmpty = false;
+  }
 }
 
 function createSettingsCard() {
@@ -117,11 +159,24 @@ function createSettingsCard() {
       "Settings:",
       "enabled = true|false",
       "injectToAN = true|false",
+      `focusMaxEntries = ${DEFAULT_FOCUS_MAX_ENTRIES}`,
+      "autoDescribeOnPromote = true|false",
+      "describeTurns = 3",
+      "describeMaxSentences = 3",
+      "describeMaxChars = 420",
+      "describeMode = overwrite|append",
+      "describeOnlyIfEmpty = true|false",
       "alias boots = feet",
       "",
       "Commands:",
       "/reloadoutfit",
       "/outfit",
+      "/seen <loc|obj|char> \"Name\"",
+      "/promote <loc|obj|char> \"Name\"",
+      "/forget <loc|obj|char> \"Name\"",
+      "/pin <loc|obj|char> \"Name\"",
+      "/unpin <loc|obj|char> \"Name\"",
+      "/listfocus",
       "/saveoutfit <name>",
       "/loadoutfit <name>",
       "/listoutfits",
@@ -157,9 +212,21 @@ function storeSettingsToSC() {
     return;
   }
   const ci = state.ci;
+  const existingLines = (settingsSC.entry || "").split("\n");
+  const preserved = existingLines.filter(line => {
+    return !line.match(/^\s*(enabled|injectToAN|focusMaxEntries|autoDescribeOnPromote|describeTurns|describeMaxSentences|describeMaxChars|describeMode|describeOnlyIfEmpty)\s*=/i);
+  }).filter(line => line.trim() !== "");
   settingsSC.entry = [
     `enabled = ${String(ci.enabled)}`,
-    `injectToAN = ${String(ci.injectToAN)}`
+    `injectToAN = ${String(ci.injectToAN)}`,
+    `focusMaxEntries = ${String(ci.focusMaxEntries)}`,
+    `autoDescribeOnPromote = ${String(ci.autoDescribeOnPromote)}`,
+    `describeTurns = ${String(ci.describeTurns)}`,
+    `describeMaxSentences = ${String(ci.describeMaxSentences)}`,
+    `describeMaxChars = ${String(ci.describeMaxChars)}`,
+    `describeMode = ${String(ci.describeMode)}`,
+    `describeOnlyIfEmpty = ${String(ci.describeOnlyIfEmpty)}`,
+    ...preserved
   ].join("\n");
 }
 
@@ -177,6 +244,34 @@ function loadSettingsFromSC() {
   const injectMatch = settingsSC.entry.match(/injectToAN\s*=\s*(true|false)/i);
   if (injectMatch) {
     ci.injectToAN = injectMatch[1].toLowerCase() === "true";
+  }
+  const focusMatch = settingsSC.entry.match(/focusMaxEntries\s*=\s*(\d+)/i);
+  if (focusMatch) {
+    ci.focusMaxEntries = Math.max(1, parseInt(focusMatch[1], 10));
+  }
+  const autoDescribeMatch = settingsSC.entry.match(/autoDescribeOnPromote\s*=\s*(true|false)/i);
+  if (autoDescribeMatch) {
+    ci.autoDescribeOnPromote = autoDescribeMatch[1].toLowerCase() === "true";
+  }
+  const describeTurnsMatch = settingsSC.entry.match(/describeTurns\s*=\s*(\d+)/i);
+  if (describeTurnsMatch) {
+    ci.describeTurns = Math.max(1, parseInt(describeTurnsMatch[1], 10));
+  }
+  const describeSentencesMatch = settingsSC.entry.match(/describeMaxSentences\s*=\s*(\d+)/i);
+  if (describeSentencesMatch) {
+    ci.describeMaxSentences = Math.max(1, parseInt(describeSentencesMatch[1], 10));
+  }
+  const describeCharsMatch = settingsSC.entry.match(/describeMaxChars\s*=\s*(\d+)/i);
+  if (describeCharsMatch) {
+    ci.describeMaxChars = Math.max(80, parseInt(describeCharsMatch[1], 10));
+  }
+  const describeModeMatch = settingsSC.entry.match(/describeMode\s*=\s*(overwrite|append)/i);
+  if (describeModeMatch) {
+    ci.describeMode = describeModeMatch[1].toLowerCase();
+  }
+  const describeEmptyMatch = settingsSC.entry.match(/describeOnlyIfEmpty\s*=\s*(true|false)/i);
+  if (describeEmptyMatch) {
+    ci.describeOnlyIfEmpty = describeEmptyMatch[1].toLowerCase() === "true";
   }
   parseAliasSettings(settingsSC.entry);
 }
@@ -205,7 +300,7 @@ function isCommandText(text) {
   if (!text) {
     return false;
   }
-  return /^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/(?:wear|takeoff|undress|reloadoutfit|outfit|remove|saveoutfit|loadoutfit|listoutfits|deleteoutfit)\b/i.test(text);
+  return /^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/(?:wear|takeoff|undress|reloadoutfit|outfit|remove|saveoutfit|loadoutfit|listoutfits|deleteoutfit|seen|promote|forget|pin|unpin|listfocus)\b/i.test(text);
 }
 
 function addUser(id) {
@@ -245,6 +340,80 @@ function handleOutfitCommands(text) {
   if (text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/outfit\b/i)) {
     const user = getPrimaryUser();
     return { handled: true, text: buildOutfitSummary(user) };
+  }
+
+  const listFocusMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/listfocus\b/i);
+  if (listFocusMatch) {
+    const focusSummary = buildFocusSummary();
+    return { handled: true, text: focusSummary };
+  }
+
+  const seenMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/seen\s+(\w+)\s+(.+)/i);
+  if (seenMatch) {
+    const type = normalizeFocusType(seenMatch[1]);
+    const name = parseOutfitName(seenMatch[2]);
+    if (!type || !name) {
+      return { handled: true, text: "<< Usage: /seen <loc|obj> \"Name\" >>" };
+    }
+    addFocusEntry(type, name);
+    return { handled: true, text: `<< Noted ${type === "locations" ? "location" : "object"}: ${name} >>` };
+  }
+
+  const promoteMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/promote\s+(\w+)\s+(.+)/i);
+  if (promoteMatch) {
+    const type = normalizeFocusType(promoteMatch[1]);
+    const name = parseOutfitName(promoteMatch[2]);
+    if (!type || !name) {
+      return { handled: true, text: "<< Usage: /promote <loc|obj> \"Name\" >>" };
+    }
+    const created = promoteFocusEntry(type, name);
+    if (created) {
+      const ci = state.ci || {};
+      if (ci.autoDescribeOnPromote && !(ci.describeOnlyIfEmpty && hasCardContent(name))) {
+        const aiPrompt = buildDescribePrompt(type, name);
+        return {
+          handled: true,
+          text: `<< Promoted ${name} >>`,
+          aiPrompt,
+          pendingDescribe: { type, name }
+        };
+      }
+      return { handled: true, text: `<< Promoted ${name} >>` };
+    }
+    return { handled: true, text: `<< Promote failed: ${name} >>` };
+  }
+
+  const forgetMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/forget\s+(\w+)\s+(.+)/i);
+  if (forgetMatch) {
+    const type = normalizeFocusType(forgetMatch[1]);
+    const name = parseOutfitName(forgetMatch[2]);
+    if (!type || !name) {
+      return { handled: true, text: "<< Usage: /forget <loc|obj> \"Name\" >>" };
+    }
+    const removed = removeFocusEntry(type, name);
+    return { handled: true, text: removed ? `<< Forgotten ${name} >>` : `<< Not found: ${name} >>` };
+  }
+
+  const pinMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/pin\s+(\w+)\s+(.+)/i);
+  if (pinMatch) {
+    const type = normalizeFocusType(pinMatch[1]);
+    const name = parseOutfitName(pinMatch[2]);
+    if (!type || !name) {
+      return { handled: true, text: "<< Usage: /pin <loc|obj> \"Name\" >>" };
+    }
+    const pinned = setFocusPinned(type, name, true);
+    return { handled: true, text: pinned ? `<< Pinned ${name} >>` : `<< Not found: ${name} >>` };
+  }
+
+  const unpinMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/unpin\s+(\w+)\s+(.+)/i);
+  if (unpinMatch) {
+    const type = normalizeFocusType(unpinMatch[1]);
+    const name = parseOutfitName(unpinMatch[2]);
+    if (!type || !name) {
+      return { handled: true, text: "<< Usage: /unpin <loc|obj> \"Name\" >>" };
+    }
+    const unpinned = setFocusPinned(type, name, false);
+    return { handled: true, text: unpinned ? `<< Unpinned ${name} >>` : `<< Not found: ${name} >>` };
   }
 
   const listMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/listoutfits\b/i);
@@ -741,6 +910,355 @@ function buildOutfitEntry(outfit) {
       : "Empty";
     return `${label}: ${itemsString}`;
   }).join("\n");
+}
+
+const DEFAULT_FOCUS_MAX_ENTRIES = 10;
+
+function getFocusCard() {
+  let focusCard = storyCards.find(card => card.title === "CI Focus");
+  if (!focusCard) {
+    addStoryCard("CI Focus", "Blank", "Outfit System");
+    focusCard = storyCards.find(card => card.title === "CI Focus");
+    if (!focusCard) {
+      return null;
+    }
+    focusCard.type = "system";
+    focusCard.keys = "";
+    focusCard.description = "Focus tracker for locations, characters, and objects (kept out of AI context).";
+    focusCard.entry = buildFocusEntry({ locations: [], characters: [], objects: [] });
+  }
+  return focusCard;
+}
+
+function normalizeFocusType(raw) {
+  if (!raw) {
+    return null;
+  }
+  const lower = raw.toLowerCase();
+  if (["loc", "location", "locations", "place", "places"].includes(lower)) {
+    return "locations";
+  }
+  if (["char", "character", "characters", "person", "people", "npc", "npcs"].includes(lower)) {
+    return "characters";
+  }
+  if (["obj", "object", "objects", "item", "items"].includes(lower)) {
+    return "objects";
+  }
+  return null;
+}
+
+function parseFocusEntry(entry) {
+  const data = { locations: [], characters: [], objects: [] };
+  if (!entry) {
+    return data;
+  }
+  let section = null;
+  entry.split("\n").forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return;
+    }
+    if (/^locations:\s*$/i.test(trimmed)) {
+      section = "locations";
+      return;
+    }
+    if (/^objects:\s*$/i.test(trimmed)) {
+      section = "objects";
+      return;
+    }
+    if (/^characters:\s*$/i.test(trimmed)) {
+      section = "characters";
+      return;
+    }
+    if (!section) {
+      return;
+    }
+    const pinned = trimmed.startsWith("*");
+    const name = trimmed.replace(/^[-*]\s+/, "").trim();
+    if (!name) {
+      return;
+    }
+    data[section].push({ name, pinned });
+  });
+  return data;
+}
+
+function buildFocusEntry(data) {
+  const lines = [];
+  lines.push("Locations:");
+  if (!data.locations || data.locations.length === 0) {
+    lines.push("- None");
+  } else {
+    data.locations.forEach(entry => {
+      const prefix = entry.pinned ? "* " : "- ";
+      lines.push(`${prefix}${entry.name}`);
+    });
+  }
+  lines.push("");
+  lines.push("Characters:");
+  if (!data.characters || data.characters.length === 0) {
+    lines.push("- None");
+  } else {
+    data.characters.forEach(entry => {
+      const prefix = entry.pinned ? "* " : "- ";
+      lines.push(`${prefix}${entry.name}`);
+    });
+  }
+  lines.push("");
+  lines.push("Objects:");
+  if (!data.objects || data.objects.length === 0) {
+    lines.push("- None");
+  } else {
+    data.objects.forEach(entry => {
+      const prefix = entry.pinned ? "* " : "- ";
+      lines.push(`${prefix}${entry.name}`);
+    });
+  }
+  return lines.join("\n");
+}
+
+function getFocusData() {
+  const focusCard = getFocusCard();
+  if (!focusCard) {
+    return { locations: [], characters: [], objects: [] };
+  }
+  return parseFocusEntry(focusCard.entry || "");
+}
+
+function saveFocusData(data) {
+  const focusCard = getFocusCard();
+  if (!focusCard) {
+    return false;
+  }
+  focusCard.entry = buildFocusEntry(data);
+  return true;
+}
+
+function addFocusEntry(type, name) {
+  const data = getFocusData();
+  const list = data[type] || [];
+  const existingIndex = list.findIndex(entry => entry.name.toLowerCase() === name.toLowerCase());
+  let pinned = false;
+  if (existingIndex >= 0) {
+    pinned = list[existingIndex].pinned;
+    list.splice(existingIndex, 1);
+  }
+  list.unshift({ name, pinned });
+  data[type] = pruneFocusList(list);
+  saveFocusData(data);
+}
+
+function removeFocusEntry(type, name) {
+  const data = getFocusData();
+  const list = data[type] || [];
+  const next = list.filter(entry => entry.name.toLowerCase() !== name.toLowerCase());
+  if (next.length === list.length) {
+    return false;
+  }
+  data[type] = next;
+  saveFocusData(data);
+  return true;
+}
+
+function setFocusPinned(type, name, pinned) {
+  const data = getFocusData();
+  const list = data[type] || [];
+  const index = list.findIndex(entry => entry.name.toLowerCase() === name.toLowerCase());
+  if (index < 0) {
+    return false;
+  }
+  list[index].pinned = pinned;
+  data[type] = list;
+  saveFocusData(data);
+  return true;
+}
+
+function pruneFocusList(list) {
+  const maxEntries = getFocusMaxEntries();
+  const pinned = list.filter(entry => entry.pinned);
+  const unpinned = list.filter(entry => !entry.pinned);
+  const allowedUnpinned = Math.max(maxEntries - pinned.length, 0);
+  return pinned.concat(unpinned.slice(0, allowedUnpinned));
+}
+
+function buildFocusSummary() {
+  const data = getFocusData();
+  const locs = (data.locations || []).map(entry => entry.name);
+  const chars = (data.characters || []).map(entry => entry.name);
+  const objs = (data.objects || []).map(entry => entry.name);
+  const parts = [];
+  parts.push("<< Focus >>");
+  parts.push(`Locations: ${locs.length > 0 ? locs.join(", ") : "None"}`);
+  parts.push(`Characters: ${chars.length > 0 ? chars.join(", ") : "None"}`);
+  parts.push(`Objects: ${objs.length > 0 ? objs.join(", ") : "None"}`);
+  return parts.join("\n");
+}
+
+function promoteFocusEntry(type, name) {
+  const existing = storyCards.find(card => (card.title || "").toLowerCase() === name.toLowerCase());
+  if (existing) {
+    if (isSavedOutfitCard(existing)) {
+      return false;
+    }
+    return true;
+  }
+  const card = findOrCreateCard(name);
+  if (!card) {
+    return false;
+  }
+  card.type = type === "locations" ? "location" : (type === "characters" ? "character" : "object");
+  card.keys = normalizeKeysFor(name).join(",");
+  card.description = type === "locations"
+    ? "Location details."
+    : (type === "characters" ? "Character details." : "Object details.");
+  if (!card.entry) {
+    card.entry = type === "locations"
+      ? `Location: ${name}.`
+      : (type === "characters" ? `Character: ${name}.` : `Object: ${name}.`);
+  }
+  if (!hasTimestamp(card)) {
+    addTimestampToCard(card, `${state.currentDate} ${state.currentTime}`);
+  }
+  return true;
+}
+
+function extractFocusTags(text) {
+  const tags = [];
+  if (!text) {
+    return tags;
+  }
+  const regex = /\[\[(loc|location|obj|object|item|char|character|person|npc):([^\]]+)\]\]/gi;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const type = normalizeFocusType(match[1]);
+    const name = match[2].trim();
+    if (type && name) {
+      tags.push({ type, name });
+    }
+  }
+  return tags;
+}
+
+function getFocusMaxEntries() {
+  const settingsCard = storyCards.find(sc => sc.title === "CI Settings");
+  if (settingsCard && settingsCard.entry) {
+    const match = settingsCard.entry.match(/focusMaxEntries\s*=\s*(\d+)/i);
+    if (match) {
+      return Math.max(1, parseInt(match[1], 10));
+    }
+  }
+  return DEFAULT_FOCUS_MAX_ENTRIES;
+}
+
+function stripFocusTags(text) {
+  if (!text) {
+    return text;
+  }
+  return text.replace(/\[\[(loc|location|obj|object|item|char|character|person|npc):[^\]]+\]\]/gi, "");
+}
+
+function buildDescribePrompt(type, name) {
+  const ci = state.ci || {};
+  const label = type === "locations" ? "location" : (type === "characters" ? "character" : "object");
+  const maxSentences = Math.max(1, ci.describeMaxSentences || 3);
+  const existing = getExistingCardSnippet(name, ci.describeMaxChars || 420);
+  const context = buildRecentContext(ci.describeTurns || 3);
+  const parts = [
+    `Write a concise ${label} description for "${name}" based on the context below.`,
+    `Use ${maxSentences} sentences or fewer.`,
+    "Output only the description text.",
+    ""
+  ];
+  if (existing) {
+    parts.push("Existing description:");
+    parts.push(existing);
+    parts.push("");
+  }
+  parts.push("Context:");
+  parts.push(context);
+  return parts.join("\n");
+}
+
+function buildRecentContext(turns) {
+  const count = Math.max(1, parseInt(turns, 10) || 1);
+  if (!history || history.length === 0) {
+    return "No prior context.";
+  }
+  const slice = history.slice(-count);
+  return slice.map(action => {
+    const label = action.type ? action.type.toUpperCase() : "TURN";
+    return `${label}: ${action.text}`;
+  }).join("\n");
+}
+
+function applyPendingDescription(text) {
+  const ci = state.ci || {};
+  const pending = ci.pendingDescribe;
+  if (!pending) {
+    return text;
+  }
+  const card = storyCards.find(c => (c.title || "").toLowerCase() === pending.name.toLowerCase());
+  if (!card) {
+    return text;
+  }
+  if (ci.describeOnlyIfEmpty && card.entry && card.entry.trim()) {
+    return text;
+  }
+  const cleaned = trimDescription(text, ci.describeMaxSentences || 3, ci.describeMaxChars || 420);
+  if (!cleaned) {
+    return text;
+  }
+  if (ci.describeMode === "append" && card.entry) {
+    card.entry = `${card.entry.trim()}\n\n${cleaned}`;
+  } else {
+    card.entry = cleaned;
+  }
+  if (!hasTimestamp(card)) {
+    addTimestampToCard(card, `${state.currentDate} ${state.currentTime}`);
+  }
+  return cleaned;
+}
+
+function trimDescription(text, maxSentences, maxChars) {
+  if (!text) {
+    return "";
+  }
+  let cleaned = stripFocusTags(text).replace(/\s+/g, " ").trim();
+  if (!cleaned) {
+    return "";
+  }
+  const sentences = cleaned.match(/[^.!?]+[.!?]*/g) || [cleaned];
+  const limited = sentences.slice(0, Math.max(1, maxSentences)).join(" ").trim();
+  if (limited.length <= maxChars) {
+    return limited;
+  }
+  return limited.slice(0, maxChars).trim();
+}
+
+function getExistingCardSnippet(name, maxChars) {
+  if (!name) {
+    return "";
+  }
+  const card = storyCards.find(c => (c.title || "").toLowerCase() === name.toLowerCase());
+  if (!card || !card.entry) {
+    return "";
+  }
+  const cleaned = stripFocusTags(card.entry).replace(/\s+/g, " ").trim();
+  if (!cleaned) {
+    return "";
+  }
+  if (cleaned.length <= maxChars) {
+    return cleaned;
+  }
+  return cleaned.slice(0, maxChars).trim();
+}
+
+function hasCardContent(name) {
+  const card = storyCards.find(c => (c.title || "").toLowerCase() === name.toLowerCase());
+  if (!card || !card.entry) {
+    return false;
+  }
+  return card.entry.trim().length > 0;
 }
 
 function injectStateToAN(text) {
