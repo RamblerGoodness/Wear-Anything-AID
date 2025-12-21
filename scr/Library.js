@@ -439,6 +439,12 @@ function handleOutfitCommands(text) {
     if (!parsedName) {
       return { handled: true, text: "<< Missing outfit name >>" };
     }
+    const normalizedInput = parsedName.replace(/\s+/g, " ").trim().toLowerCase();
+    if (normalizedInput === "default" || normalizedInput === "default outfit") {
+      const user = getPrimaryUser();
+      state.ci.users[user].outfit = getDefaultOutfitFromCard() || {};
+      return { handled: true, text: "<< Loaded default outfit >>" };
+    }
     const name = normalizeOutfitName(parsedName);
     const saved = getSavedOutfitByName(name);
     if (!saved) {

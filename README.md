@@ -45,6 +45,7 @@ Saved outfits:
 
 - `/saveoutfit <name>`
 - `/loadoutfit <name>` (Default Outfit is the base)
+- `/loadoutfit default`
 - `/deleteoutfit <name>`
 
 Notes:
@@ -81,6 +82,7 @@ Notes:
 - `/promote loc "Golden Inn"`
 - `/saveoutfit "Casual"`
 - `/loadoutfit Casual`
+- `/loadoutfit "default"`
 
 ## Story Cards
 
