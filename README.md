@@ -28,7 +28,7 @@ Copy each file into the matching AI Dungeon script tab:
 Outfit:
 
 - `/undress`
-- `/reloadoutfit`
+- `/reloadoutfit` (if started with default outfit will reset to that)
 - `/outfit`
 - `/remove "Item"` (exact match)
 - `/wear <category> "Item"`
@@ -81,7 +81,7 @@ Edit the `CI Settings` entry to control behavior:
 
 You can set a default outfit in Plot Essentials using:
 
-```
+```txt
 Outfit: Layer: White Shirt; Bottom: Jeans; Feet: Sneakers
 ```
 
