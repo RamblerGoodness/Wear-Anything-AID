@@ -116,6 +116,10 @@ function createSettingsCard() {
       "Commands:",
       "/reloadoutfit",
       "/outfit",
+      "/saveoutfit <name>",
+      "/loadoutfit <name>",
+      "/listoutfits",
+      "/deleteoutfit <name>",
       "/remove \"Item\"",
       "/remove <category>",
       "/undress",
@@ -195,7 +199,7 @@ function isCommandText(text) {
   if (!text) {
     return false;
   }
-  return /^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/(?:wear|takeoff|undress|reloadoutfit|outfit|remove)\b/i.test(text);
+  return /^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/(?:wear|takeoff|undress|reloadoutfit|outfit|remove|saveoutfit|loadoutfit|listoutfits|deleteoutfit)\b/i.test(text);
 }
 
 function addUser(id) {
@@ -235,6 +239,66 @@ function handleOutfitCommands(text) {
   if (text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/outfit\b/i)) {
     const user = getPrimaryUser();
     return { handled: true, text: buildOutfitSummary(user) };
+  }
+
+  const listMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/listoutfits\b/i);
+  if (listMatch) {
+    const outfits = listSavedOutfits();
+    if (outfits.length === 0) {
+      return { handled: true, text: "<< No saved outfits >>" };
+    }
+    return { handled: true, text: `<< Saved outfits: ${outfits.join(", ")} >>` };
+  }
+
+  const saveMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/saveoutfit\s+(.+)/i);
+  if (saveMatch) {
+    const rawName = saveMatch[1].trim();
+    const name = parseOutfitName(rawName);
+    if (!name) {
+      return { handled: true, text: "<< Missing outfit name >>" };
+    }
+    if (isReservedOutfitName(name)) {
+      return { handled: true, text: `<< Reserved outfit name: ${name} >>` };
+    }
+    if (isOutfitNameInUse(name)) {
+      return { handled: true, text: `<< Outfit name in use: ${name} >>` };
+    }
+    const user = getPrimaryUser();
+    const outfit = getOutfit(user);
+    const saved = saveOutfitCard(name, outfit);
+    return { handled: true, text: saved ? `<< Saved outfit: ${name} >>` : "<< Outfit save failed >>" };
+  }
+
+  const loadMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/loadoutfit\s+(.+)/i);
+  if (loadMatch) {
+    const rawName = loadMatch[1].trim();
+    const name = parseOutfitName(rawName);
+    if (!name) {
+      return { handled: true, text: "<< Missing outfit name >>" };
+    }
+    const saved = getSavedOutfitByName(name);
+    if (!saved) {
+      return { handled: true, text: `<< Outfit not found: ${name} >>` };
+    }
+    const defaultOutfit = getDefaultOutfitFromCard() || {};
+    const merged = applyOutfitToBase(defaultOutfit, saved.outfit);
+    const user = getPrimaryUser();
+    state.ci.users[user].outfit = merged;
+    return { handled: true, text: `<< Loaded outfit: ${saved.title} >>` };
+  }
+
+  const deleteMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/deleteoutfit\s+(.+)/i);
+  if (deleteMatch) {
+    const rawName = deleteMatch[1].trim();
+    const name = parseOutfitName(rawName);
+    if (!name) {
+      return { handled: true, text: "<< Missing outfit name >>" };
+    }
+    const removed = deleteSavedOutfitByName(name);
+    if (removed) {
+      return { handled: true, text: `<< Deleted outfit: ${removed} >>` };
+    }
+    return { handled: true, text: `<< Outfit not found: ${name} >>` };
   }
 
   const removeMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/remove\s+(.+)/i);
@@ -466,19 +530,7 @@ function storeOutfitToSC() {
     if (!outfitSC) {
       return;
     }
-    const outfitCategories = Object.keys(ci.users[usr].outfit || {}).sort();
-    if (outfitCategories.length === 0) {
-      outfitSC.entry = "Empty";
-      return;
-    }
-    outfitSC.entry = outfitCategories.map(category => {
-      const itemsArray = ci.users[usr].outfit[category];
-      const label = formatCategoryLabel(category);
-    const itemsString = (itemsArray && itemsArray.length > 0)
-        ? itemsArray.join(", ")
-        : "Empty";
-      return `${label}: ${itemsString}`;
-    }).join("\n");
+    outfitSC.entry = buildOutfitEntry(ci.users[usr].outfit || {});
   });
 }
 
@@ -521,6 +573,143 @@ function parseOutfitEntry(entry) {
   return outfit;
 }
 
+function parseOutfitName(raw) {
+  if (!raw) {
+    return "";
+  }
+  return raw.replace(/^"(.*)"$/g, "$1").replace(/^'(.*)'$/g, "$1").trim();
+}
+
+function isReservedOutfitName(name) {
+  if (!name) {
+    return true;
+  }
+  const reserved = [
+    "ci settings",
+    "default outfit"
+  ];
+  const lower = name.toLowerCase();
+  if (reserved.includes(lower)) {
+    return true;
+  }
+  return /'s outfit$/i.test(name);
+}
+
+function isOutfitNameInUse(name) {
+  const card = storyCards.find(sc => (sc.title || "").toLowerCase() === name.toLowerCase());
+  return !!(card && !isSavedOutfitCard(card));
+}
+
+function applyOutfitToBase(baseOutfit, savedOutfit) {
+  const base = cloneOutfit(baseOutfit);
+  const saved = cloneOutfit(savedOutfit);
+  const baseCategories = Object.keys(base);
+  if (baseCategories.length === 0) {
+    return saved;
+  }
+  const merged = {};
+  baseCategories.forEach(category => {
+    if (saved[category]) {
+      merged[category] = saved[category];
+    } else {
+      merged[category] = [];
+    }
+  });
+  return merged;
+}
+
+function cloneOutfit(outfit) {
+  const cloned = {};
+  Object.keys(outfit || {}).forEach(category => {
+    const items = outfit[category] || [];
+    cloned[category] = items.slice();
+  });
+  return cloned;
+}
+
+function saveOutfitCard(name, outfit) {
+  const exactMatch = storyCards.find(sc => (sc.title || "").toLowerCase() === name.toLowerCase());
+  if (exactMatch && !isSavedOutfitCard(exactMatch)) {
+    return false;
+  }
+  const existing = findSavedOutfitCard(name);
+  let card = existing;
+  if (!card) {
+    addStoryCard(name, "Blank", "Outfit System");
+    card = storyCards.find(sc => sc.title === name);
+  }
+  if (!card) {
+    return false;
+  }
+  card.type = "system";
+  card.keys = "";
+  card.description = `Saved Outfit: ${name}`;
+  card.entry = buildOutfitEntry(outfit);
+  return true;
+}
+
+function getSavedOutfitByName(name) {
+  const card = findSavedOutfitCard(name);
+  if (!card || !card.entry) {
+    return null;
+  }
+  const entry = card.entry.trim();
+  if (!entry || entry.toLowerCase() === "empty") {
+    return { title: card.title, outfit: {} };
+  }
+  return { title: card.title, outfit: parseOutfitEntry(entry) };
+}
+
+function deleteSavedOutfitByName(name) {
+  const index = findSavedOutfitIndex(name);
+  if (index < 0) {
+    return null;
+  }
+  const title = storyCards[index].title;
+  storyCards.splice(index, 1);
+  return title;
+}
+
+function listSavedOutfits() {
+  const outfits = storyCards
+    .filter(card => isSavedOutfitCard(card))
+    .map(card => card.title)
+    .sort((a, b) => a.localeCompare(b));
+  return outfits;
+}
+
+function findSavedOutfitCard(name) {
+  const index = findSavedOutfitIndex(name);
+  if (index < 0) {
+    return null;
+  }
+  return storyCards[index];
+}
+
+function findSavedOutfitIndex(name) {
+  if (!name) {
+    return -1;
+  }
+  const lower = name.toLowerCase();
+  for (let i = 0; i < storyCards.length; i++) {
+    const card = storyCards[i];
+    if (!isSavedOutfitCard(card)) {
+      continue;
+    }
+    if ((card.title || "").toLowerCase() === lower) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function isSavedOutfitCard(card) {
+  if (!card || !card.description || !card.title) {
+    return false;
+  }
+  return card.description.startsWith("Saved Outfit:");
+}
+
 function getDefaultOutfitFromCard() {
   const defaultSC = storyCards.find(sc => sc.title === "Default Outfit");
   if (!defaultSC || !defaultSC.entry) {
@@ -531,6 +720,21 @@ function getDefaultOutfitFromCard() {
     return null;
   }
   return parseOutfitEntry(entry);
+}
+
+function buildOutfitEntry(outfit) {
+  const outfitCategories = Object.keys(outfit || {}).sort();
+  if (outfitCategories.length === 0) {
+    return "Empty";
+  }
+  return outfitCategories.map(category => {
+    const itemsArray = outfit[category];
+    const label = formatCategoryLabel(category);
+    const itemsString = (itemsArray && itemsArray.length > 0)
+      ? itemsArray.join(", ")
+      : "Empty";
+    return `${label}: ${itemsString}`;
+  }).join("\n");
 }
 
 function injectStateToAN(text) {

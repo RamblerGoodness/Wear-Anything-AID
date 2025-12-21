@@ -32,6 +32,10 @@ Outfit:
 - `/undress` (removes everything leaves categories)
 - `/reloadoutfit` (if started with default outfit will reset to that)
 - `/outfit`
+- `/saveoutfit <name>` (saves current outfit)
+- `/loadoutfit <name>` (loads a saved outfit; Default Outfit is the base)
+- `/listoutfits`
+- `/deleteoutfit <name>`
 - `/remove "Item"` (exact match)
 - `/remove <category>` (removes the category entirely)
 - `/wear <category> "Item"`
@@ -57,6 +61,10 @@ Outfit input:
 - /outfit
 - /remove "green hat"
 - /remove accessory
+- /saveoutfit "Casual"
+- /listoutfits
+- /loadoutfit Casual
+- /deleteoutfit Casual
 
 ## Story Cards
 
@@ -65,6 +73,7 @@ The script creates these story cards if missing:
 - `CI Settings`: config values and command reference.
 - `[User]'s Outfit`: outfit entries by category.
 - `Default Outfit`: default outfit template for new users.
+- `Saved Outfit` cards: one card per saved outfit name (no keys so AI only sees the active outfit).
 - `Current Date and Time`: WTG state and commands.
 - `WTG Data`: internal WTG tracking.
 - `WTG Cooldowns`: internal WTG cooldowns.
@@ -85,6 +94,7 @@ Edit the `CI Settings` entry to control behavior:
 - Add category aliases in `CI Settings` like `alias boots = feet`.
 - `/remove "Item"` removes exact matches across all categories.
 - `/remove <category>` deletes the category from the outfit.
+- `/loadoutfit <name>` starts from Default Outfit and applies the saved outfit on top; missing categories become Empty so you don't need to save empty categories.
 - Author's Note injection is wrapped in a `[CI State]` block to prevent duplicates.
 - Immersive D20 triggers on lines with `try/tries/trying/attempt/attempts/attempting` (optionally prefixed with `>`), and keeps results stable on retries.
 
@@ -117,5 +127,6 @@ Try:
 - Batch wear/takeoff across categories, e.g. `/wear tops:"Shirt", bottoms:"Jeans"`.
 - Per-user targeting, e.g. `/wear @Alice tops "Jacket"`.
 - Undo/redo last outfit change, e.g. `/undooutfit`.
-- Outfit presets (save/load), e.g. `/saveoutfit casual` and `/loadoutfit casual`.
 - Optional inventory tie-in so you can only wear items you own.
+- Category ordering/priority so outfits render in a consistent, user-defined order.
+- Quick toggle to suppress outfit changes from AN output.
