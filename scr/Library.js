@@ -1,5 +1,7 @@
 // Outfit System Library Script
 
+const DEFAULT_FOCUS_MAX_ENTRIES = 10;
+
 CI_Library();
 
 function CI_Library() {
@@ -911,8 +913,6 @@ function buildOutfitEntry(outfit) {
     return `${label}: ${itemsString}`;
   }).join("\n");
 }
-
-const DEFAULT_FOCUS_MAX_ENTRIES = 10;
 
 function getFocusCard() {
   let focusCard = storyCards.find(card => card.title === "CI Focus");
