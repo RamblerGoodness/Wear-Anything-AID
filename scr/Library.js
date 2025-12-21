@@ -174,15 +174,13 @@ function createSettingsCard() {
       "Commands:",
       "/reloadoutfit",
       "/outfit",
-      "/seen <loc|obj|char> \"Name\"",
+      "/mark <loc|obj|char> \"Name\"",
       "/promote <loc|obj|char> \"Name\"",
       "/forget <loc|obj|char> \"Name\"",
       "/pin <loc|obj|char> \"Name\"",
       "/unpin <loc|obj|char> \"Name\"",
-      "/listfocus",
       "/saveoutfit <name>",
       "/loadoutfit <name>",
-      "/listoutfits",
       "/deleteoutfit <name>",
       "/remove \"Item\"",
       "/remove <category>",
@@ -303,7 +301,7 @@ function isCommandText(text) {
   if (!text) {
     return false;
   }
-  return /^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/(?:wear|takeoff|undress|reloadoutfit|outfit|remove|saveoutfit|loadoutfit|listoutfits|deleteoutfit|seen|promote|forget|pin|unpin|listfocus)\b/i.test(text);
+  return /^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/(?:wear|takeoff|undress|reloadoutfit|outfit|remove|saveoutfit|loadoutfit|deleteoutfit|mark|promote|forget|pin|unpin)\b/i.test(text);
 }
 
 function addUser(id) {
@@ -345,21 +343,16 @@ function handleOutfitCommands(text) {
     return { handled: true, text: buildOutfitSummary(user) };
   }
 
-  const listFocusMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/listfocus\b/i);
-  if (listFocusMatch) {
-    const focusSummary = buildFocusSummary();
-    return { handled: true, text: focusSummary };
-  }
-
-  const seenMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/seen\s+(\w+)\s+(.+)/i);
-  if (seenMatch) {
-    const type = normalizeFocusType(seenMatch[1]);
-    const name = parseOutfitName(seenMatch[2]);
+  const markMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/mark\s+(\w+)\s+(.+)/i);
+  if (markMatch) {
+    const type = normalizeFocusType(markMatch[1]);
+    const name = parseOutfitName(markMatch[2]);
     if (!type || !name) {
-      return { handled: true, text: "<< Usage: /seen <loc|obj> \"Name\" >>" };
+      return { handled: true, text: "<< Usage: /mark <loc|obj|char> \"Name\" >>" };
     }
     addFocusEntry(type, name);
-    return { handled: true, text: `<< Noted ${type === "locations" ? "location" : "object"}: ${name} >>` };
+    const label = type === "locations" ? "location" : (type === "characters" ? "character" : "object");
+    return { handled: true, text: `<< Noted ${label}: ${name} >>` };
   }
 
   const promoteMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/promote\s+(\w+)\s+(.+)/i);
@@ -419,22 +412,14 @@ function handleOutfitCommands(text) {
     return { handled: true, text: unpinned ? `<< Unpinned ${name} >>` : `<< Not found: ${name} >>` };
   }
 
-  const listMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/listoutfits\b/i);
-  if (listMatch) {
-    const outfits = listSavedOutfits();
-    if (outfits.length === 0) {
-      return { handled: true, text: "<< No saved outfits >>" };
-    }
-    return { handled: true, text: `<< Saved outfits: ${outfits.join(", ")} >>` };
-  }
-
   const saveMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/saveoutfit\s+(.+)/i);
   if (saveMatch) {
     const rawName = saveMatch[1].trim();
-    const name = parseOutfitName(rawName);
-    if (!name) {
+    const parsedName = parseOutfitName(rawName);
+    if (!parsedName) {
       return { handled: true, text: "<< Missing outfit name >>" };
     }
+    const name = normalizeOutfitName(parsedName);
     if (isReservedOutfitName(name)) {
       return { handled: true, text: `<< Reserved outfit name: ${name} >>` };
     }
@@ -450,10 +435,11 @@ function handleOutfitCommands(text) {
   const loadMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/loadoutfit\s+(.+)/i);
   if (loadMatch) {
     const rawName = loadMatch[1].trim();
-    const name = parseOutfitName(rawName);
-    if (!name) {
+    const parsedName = parseOutfitName(rawName);
+    if (!parsedName) {
       return { handled: true, text: "<< Missing outfit name >>" };
     }
+    const name = normalizeOutfitName(parsedName);
     const saved = getSavedOutfitByName(name);
     if (!saved) {
       return { handled: true, text: `<< Outfit not found: ${name} >>` };
@@ -468,10 +454,11 @@ function handleOutfitCommands(text) {
   const deleteMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/deleteoutfit\s+(.+)/i);
   if (deleteMatch) {
     const rawName = deleteMatch[1].trim();
-    const name = parseOutfitName(rawName);
-    if (!name) {
+    const parsedName = parseOutfitName(rawName);
+    if (!parsedName) {
       return { handled: true, text: "<< Missing outfit name >>" };
     }
+    const name = normalizeOutfitName(parsedName);
     const removed = deleteSavedOutfitByName(name);
     if (removed) {
       return { handled: true, text: `<< Deleted outfit: ${removed} >>` };
@@ -758,6 +745,13 @@ function parseOutfitName(raw) {
   return raw.replace(/^"(.*)"$/g, "$1").replace(/^'(.*)'$/g, "$1").trim();
 }
 
+function normalizeOutfitName(name) {
+  if (!name) {
+    return "";
+  }
+  return titleCaseWords(name.replace(/\s+/g, " ").trim());
+}
+
 function isReservedOutfitName(name) {
   if (!name) {
     return true;
@@ -846,14 +840,6 @@ function deleteSavedOutfitByName(name) {
   const title = storyCards[index].title;
   storyCards.splice(index, 1);
   return title;
-}
-
-function listSavedOutfits() {
-  const outfits = storyCards
-    .filter(card => isSavedOutfitCard(card))
-    .map(card => card.title)
-    .sort((a, b) => a.localeCompare(b));
-  return outfits;
 }
 
 function findSavedOutfitCard(name) {
@@ -1080,19 +1066,6 @@ function pruneFocusList(list) {
   const unpinned = list.filter(entry => !entry.pinned);
   const allowedUnpinned = Math.max(maxEntries - pinned.length, 0);
   return pinned.concat(unpinned.slice(0, allowedUnpinned));
-}
-
-function buildFocusSummary() {
-  const data = getFocusData();
-  const locs = (data.locations || []).map(entry => entry.name);
-  const chars = (data.characters || []).map(entry => entry.name);
-  const objs = (data.objects || []).map(entry => entry.name);
-  const parts = [];
-  parts.push("<< Focus >>");
-  parts.push(`Locations: ${locs.length > 0 ? locs.join(", ") : "None"}`);
-  parts.push(`Characters: ${chars.length > 0 ? chars.join(", ") : "None"}`);
-  parts.push(`Objects: ${objs.length > 0 ? objs.join(", ") : "None"}`);
-  return parts.join("\n");
 }
 
 function promoteFocusEntry(type, name) {

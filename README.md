@@ -35,18 +35,16 @@ Outfit:
 
 Focus:
 
-- `/seen <loc|obj|char> "Name"`
+- `/mark <loc|obj|char> "Name"`
 - `/pin <loc|obj|char> "Name"`
 - `/unpin <loc|obj|char> "Name"`
 - `/forget <loc|obj|char> "Name"`
 - `/promote <loc|obj|char> "Name"` (creates a full story card)
-- `/listfocus`
 
 Saved outfits:
 
 - `/saveoutfit <name>`
 - `/loadoutfit <name>` (Default Outfit is the base)
-- `/listoutfits`
 - `/deleteoutfit <name>`
 
 Notes:
@@ -58,7 +56,7 @@ Notes:
 
 `CI Focus` is a compact tracker for locations, characters, and objects. It avoids card spam.
 
-- Add entries with tags like `[[loc:Golden Inn]]`, `[[char:Innkeeper]]`, `[[obj:Silver Key]]` or with `/seen`.
+- Add entries with tags like `[[loc:Golden Inn]]`, `[[char:Innkeeper]]`, `[[obj:Silver Key]]` or with `/mark`.
 - Repeated entries are de-duplicated and bumped to the top.
 - The list is capped per section by `focusMaxEntries`.
 - Pin important entries so they never expire.
@@ -77,10 +75,9 @@ Notes:
 - `/wear layer "T-shirt"`
 - `/takeoff layer`
 - `/remove "green hat"`
-- `/seen loc "Golden Inn"`
-- `/seen char "Innkeeper"`
-- `/seen obj "Silver Key"`
-- `/listfocus`
+- `/mark loc "Golden Inn"`
+- `/mark char "Innkeeper"`
+- `/mark obj "Silver Key"`
 - `/promote loc "Golden Inn"`
 - `/saveoutfit "Casual"`
 - `/loadoutfit Casual`
