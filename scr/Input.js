@@ -368,18 +368,11 @@ function WTG_Input(text) {
   return modifiedText;
 }
 
-function isOutfitCommandText(text) {
-  if (!text) {
-    return false;
-  }
-  return /^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/(?:wear|takeoff|undress|reloadoutfit|outfit|remove)\b/i.test(text);
-}
-
 function oracleInput(text) {
   if (!text) {
     return { text };
   }
-  if (isOutfitCommandText(text)) {
+  if (isCommandText(text)) {
     return { text };
   }
   const attemptRegex = /(?:^|\n)\s*>?\s*(.*)\b(try|tries|trying|attempt|attempts|attempting)\b/i;
@@ -409,7 +402,7 @@ function oracleInput(text) {
   if (state.oracle.action == info.actionCount) {
     if (state.oracle.frontMemory) {
       state.memory.frontMemory = state.oracle.frontMemory;
-      if (!isOutfitCommandText(text)) {
+      if (!isCommandText(text)) {
         text = `${text}\n${state.oracle.frontMemory}`.trim();
       }
     }
@@ -422,7 +415,7 @@ function oracleInput(text) {
     if (state.oracle.frontMemory) {
       state.memory.frontMemory = state.oracle.frontMemory;
       state.message = state.oracle.frontMemory;
-      if (!isOutfitCommandText(text)) {
+      if (!isCommandText(text)) {
         text = `${text}\n${state.oracle.frontMemory}`.trim();
       }
     }

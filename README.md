@@ -33,10 +33,12 @@ Outfit:
 - `/reloadoutfit` (if started with default outfit will reset to that)
 - `/outfit`
 - `/remove "Item"` (exact match)
+- `/remove <category>` (removes the category entirely)
 - `/wear <category> "Item"`
 - `/wear <category>` (creates an empty category)
 - `/takeoff <category> "Item"`
-- `/takeoff <category>` (clears everything in that category)
+- `/takeoff <category>` (clears everything in that category, keeps the category)
+
 Categories should be unquoted (e.g., `/takeoff tops`, not `/takeoff "tops"`).
 
 Categories are flexible. If you use a new category (e.g., `hands`), it is created automatically.
@@ -54,6 +56,7 @@ Outfit input:
 - /wear gloves
 - /outfit
 - /remove "green hat"
+- /remove accessory
 
 ## Story Cards
 
@@ -81,6 +84,7 @@ Edit the `CI Settings` entry to control behavior:
 - Use `Empty` as the item list to keep a category with no items.
 - Add category aliases in `CI Settings` like `alias boots = feet`.
 - `/remove "Item"` removes exact matches across all categories.
+- `/remove <category>` deletes the category from the outfit.
 - Author's Note injection is wrapped in a `[CI State]` block to prevent duplicates.
 - Immersive D20 triggers on lines with `try/tries/trying/attempt/attempts/attempting` (optionally prefixed with `>`), and keeps results stable on retries.
 
@@ -96,3 +100,22 @@ Feet: Sneakers
 
 Categories are open-ended; any `Category: items` line is accepted.
 If the outfit entry is empty, the script uses no default outfit.
+
+### They'er Features not Bugs
+
+This system is not locked to manage clothes even thought that was the intent.
+want to keep track of stats? Items? traits? Let the AI see what you look like? You can /wear /takeoff /remove anything! Try it out!
+
+Try:
+
+- /wear race human
+- /wear class mage
+
+### Plans/Ideas for future updates
+
+- Multi-category commands like `/takeoff tops, bottoms` and `/remove tops, boots`.
+- Batch wear/takeoff across categories, e.g. `/wear tops:"Shirt", bottoms:"Jeans"`.
+- Per-user targeting, e.g. `/wear @Alice tops "Jacket"`.
+- Undo/redo last outfit change, e.g. `/undooutfit`.
+- Outfit presets (save/load), e.g. `/saveoutfit casual` and `/loadoutfit casual`.
+- Optional inventory tie-in so you can only wear items you own.

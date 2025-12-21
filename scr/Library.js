@@ -37,7 +37,8 @@ function CI_Input(text) {
   if (outfitCommandResult.handled) {
     storeOutfitToSC();
     storeSettingsToSC();
-    return outfitCommandResult.text;
+    state.message = outfitCommandResult.text;
+    return "";
   }
 
   return text;
@@ -116,6 +117,7 @@ function createSettingsCard() {
       "/reloadoutfit",
       "/outfit",
       "/remove \"Item\"",
+      "/remove <category>",
       "/undress",
       "/wear <category> \"Item\"",
       "/takeoff <category> \"Item\""
@@ -237,18 +239,31 @@ function handleOutfitCommands(text) {
 
   const removeMatch = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/remove\s+(.+)/i);
   if (removeMatch) {
-    const itemText = removeMatch[1].trim();
-    const item = itemText.replace(/^"(.*)"$/g, "$1").replace(/^'(.*)'$/g, "$1").trim();
-    if (!item) {
-      return { handled: true, text: "<< Missing outfit item >>" };
+    const rawRemove = removeMatch[1].trim();
+    const removeWasQuoted = /^".*"$/.test(rawRemove) || /^'.*'$/.test(rawRemove);
+    if (removeWasQuoted) {
+      const item = rawRemove.replace(/^"(.*)"$/g, "$1").replace(/^'(.*)'$/g, "$1").trim();
+      if (!item) {
+        return { handled: true, text: "<< Missing outfit item >>" };
+      }
+      const displayItem = normalizeItemName(item) || item;
+      const user = getPrimaryUser();
+      const removed = removeOutfitItemAny(user, item);
+      if (removed) {
+        return { handled: true, text: `<< Removed ${displayItem} >>` };
+      }
+      return { handled: true, text: `<< ${displayItem} not found >>` };
     }
-    const displayItem = normalizeItemName(item) || item;
+    const category = normalizeOutfitCategory(rawRemove);
+    if (!category) {
+      return { handled: true, text: "<< Missing outfit category >>" };
+    }
     const user = getPrimaryUser();
-    const removed = removeOutfitItemAny(user, item);
-    if (removed) {
-      return { handled: true, text: `<< Removed ${displayItem} >>` };
+    const removedCategory = removeOutfitCategory(user, category);
+    if (removedCategory) {
+      return { handled: true, text: `<< Removed category: ${category} >>` };
     }
-    return { handled: true, text: `<< ${displayItem} not found >>` };
+    return { handled: true, text: `<< ${category} not found >>` };
   }
 
   if (text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/undress\b/i)) {
@@ -276,11 +291,6 @@ function handleOutfitCommands(text) {
   }
 
   if (action === "takeoff" && !category && rawItem) {
-    const explicitCategory = lookupOutfitCategory(rawItem);
-    if (explicitCategory) {
-      clearOutfitCategory(user, explicitCategory);
-      return { handled: true, text: `<< Cleared ${explicitCategory} >>` };
-    }
     const fallbackCategory = normalizeOutfitCategory(rawItem);
     if (fallbackCategory) {
       clearOutfitCategory(user, fallbackCategory);
@@ -485,8 +495,12 @@ function parseOutfitEntry(entry) {
       return;
     }
     const category = normalizeOutfitCategory(match[1]);
+    if (!category) {
+      return;
+    }
     const itemsString = match[2].trim();
     if (!itemsString || itemsString.toLowerCase() === "empty" || itemsString.toLowerCase().startsWith("no ")) {
+      outfit[category] = [];
       return;
     }
     const seen = new Set();
@@ -517,19 +531,6 @@ function getDefaultOutfitFromCard() {
     return null;
   }
   return parseOutfitEntry(entry);
-}
-
-function removeOutfitFromPE(memory, lines, startIndex, endIndex) {
-  if (startIndex < 0) {
-    return;
-  }
-  if (endIndex < 0) {
-    return;
-  }
-  const end = endIndex >= 0 ? endIndex : lines.length - 1;
-  const updated = lines.slice(0, startIndex).concat(lines.slice(end + 1));
-  memory.context = updated.join("\n");
-  state.memory = memory;
 }
 
 function injectStateToAN(text) {
@@ -612,7 +613,16 @@ function clearOutfitCategory(user, category) {
   if (!outfit[category]) {
     return;
   }
+  outfit[category] = [];
+}
+
+function removeOutfitCategory(user, category) {
+  const outfit = getOutfit(user);
+  if (!outfit[category]) {
+    return false;
+  }
   delete outfit[category];
+  return true;
 }
 
 function clearOutfit(user) {
@@ -633,33 +643,10 @@ function getOutfit(user) {
   return ci.users[user].outfit;
 }
 
-function categorizeOutfitItem(item) {
-  const lower = item.toLowerCase();
-  const categories = [
-    { name: "headwear", keywords: ["helmet", "hat", "cap", "hood", "mask", "goggles", "visor"] },
-    { name: "footwear", keywords: ["boot", "boots", "shoe", "shoes", "sneaker", "sneakers", "sandal", "sandals"] },
-    { name: "bottoms", keywords: ["pants", "jeans", "trousers", "leggings", "skirt", "shorts"] },
-    { name: "tops", keywords: ["shirt", "t-shirt", "tee", "blouse", "top", "sweater", "tunic"] },
-    { name: "outerwear", keywords: ["coat", "jacket", "armor", "armour", "cloak", "cape", "mantle", "robe"] },
-    { name: "undergarments", keywords: ["underwear", "boxers", "briefs", "bra", "panties"] },
-    { name: "accessories", keywords: ["ring", "necklace", "bracelet", "belt", "gloves", "gauntlet", "amulet"] }
-  ];
-  for (const category of categories) {
-    if (category.keywords.some(k => lower.includes(k))) {
-      return category.name;
-    }
-  }
-  return "accessories";
-}
-
 function normalizeOutfitCategory(category) {
   const alias = resolveOutfitAlias(category);
   if (alias) {
     return alias;
-  }
-  const mapped = lookupOutfitCategory(category);
-  if (mapped) {
-    return mapped;
   }
   return sanitizeCategory(category);
 }
@@ -736,34 +723,6 @@ function removeOutfitItemAny(user, item) {
     outfit[category] = nextItems;
   });
   return removed;
-}
-
-function lookupOutfitCategory(category) {
-  const key = category ? category.toLowerCase() : "";
-  const map = {
-    outerwear: "outerwear",
-    coat: "outerwear",
-    jacket: "outerwear",
-    tops: "tops",
-    top: "tops",
-    shirts: "tops",
-    shirt: "tops",
-    bottoms: "bottoms",
-    bottom: "bottoms",
-    pants: "bottoms",
-    trousers: "bottoms",
-    footwear: "footwear",
-    shoes: "footwear",
-    shoe: "footwear",
-    boots: "footwear",
-    accessories: "accessories",
-    accessory: "accessories",
-    headwear: "headwear",
-    head: "headwear",
-    undergarments: "undergarments",
-    underwear: "undergarments"
-  };
-  return map[key] || null;
 }
 
 function buildCiStateBlock(lines) {
@@ -1681,49 +1640,6 @@ Timestamp: ${timestamp}
 }
 
 /**
- * Track a generated character in the WTG Data card
- * @param {string} name - Character name
- * @param {string} actionText - Action text where character was first mentioned
- * @param {string} timestamp - Timestamp when character was discovered
- */
-function trackGeneratedCharacter(name, actionText, timestamp) {
-  const dataCard = getWTGDataCard();
-  
-  const characterEntry = `[Generated Character]
-Name: ${name}
-First Mentioned: ${actionText.substring(0, 100)}...
-Discovered On: ${timestamp}
-[/Generated Character]`;
-  
-  if (dataCard.entry) {
-    dataCard.entry += '\n\n' + characterEntry;
-  } else {
-    dataCard.entry = characterEntry;
-  }
-}
-
-/**
- * Track a potential character in the WTG Data card without marking as discovered
- * @param {string} name - Character name
- * @param {string} actionText - Action text where character was first mentioned
- */
-function trackPotentialCharacter(name, actionText) {
-  const dataCard = getWTGDataCard();
-  
-  const characterEntry = `[Generated Character]
-Name: ${name}
-First Mentioned: ${actionText.substring(0, 100)}...
-Discovered On: not yet discovered in story
-[/Generated Character]`;
-  
-  if (dataCard.entry) {
-    dataCard.entry += '\n\n' + characterEntry;
-  } else {
-    dataCard.entry = characterEntry;
-  }
-}
-
-/**
  * Update the discovery status of a character in the WTG Data card
  * @param {string} name - Character name
  * @param {string} timestamp - Discovery timestamp
@@ -2413,12 +2329,6 @@ function hasStoryCardForName(name) {
  * @param {string} context - Context for generating the storycard entry
  * @returns {Promise<string>} Generated storycard entry
  */
-function generateCharacterStoryCardEntry(name, context) {
-  // In a real implementation, this would use AI prompting through the context/output modifiers
-  // For now, we'll return a placeholder that can be replaced by the AI-generated content
-  return `A character named ${name}. First mentioned in the story context: ${context.substring(0, 100)}...`;
-}
-
 /**
  * Check if a storycard's triggers are mentioned in the given text
  * @param {Object} card - Storycard to check
