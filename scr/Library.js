@@ -8,6 +8,7 @@ function CI_Library() {
   initCI();
   createSettingsCard();
   createDefaultOutfitCard();
+  getFocusCard();
   loadSettingsFromSC();
   ensureDefaultUser();
   createIfNoOutfitSC();
