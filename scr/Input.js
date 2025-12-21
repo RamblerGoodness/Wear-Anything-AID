@@ -6,7 +6,9 @@ const modifier = (text) => {
     text = WTG_Input(text);
     text = oracleInput(text).text;
     text = CI_Input(text);
-    text = betterSay(text).text;
+    if (!(state.ci && state.ci.pendingDescribe)) {
+      text = betterSay(text).text;
+    }
     return { text };
   } catch (err) {
     return { text };
@@ -197,119 +199,22 @@ function WTG_Input(text) {
     modifiedText = messages.join("\n") + (modifiedText ? "\n" + modifiedText : "");
   }
 
-  // Process entity markers in player input (always enabled)
-  // Get the full input for storycard entries
-  const fullInputText = text;
-
-  // Blacklist for commands and pronouns
-  const entityBlacklist = [
-    "settime", "advance", "reset", "sleep", "help", "status", "time", "date",
-    "config", "settings", "debug", "test", "version", "info", "list", "show",
-    "clear", "delete", "remove", "add", "create", "update", "modify", "change",
-    "sleep", "advance",
-    // Personal pronouns
-    "i", "me", "my", "mine", "myself",
-    "you", "your", "yours", "yourself", "yourselves",
-    "he", "him", "his", "himself",
-    "she", "her", "hers", "herself",
-    "it", "its", "itself",
-    "we", "us", "our", "ours", "ourselves",
-    "they", "them", "their", "theirs", "themselves",
-    // Demonstrative pronouns
-    "this", "that", "these", "those",
-    // Relative pronouns
-    "who", "whom", "whose", "which", "what",
-    // Indefinite pronouns
-    "someone", "somebody", "something", "somewhere",
-    "anyone", "anybody", "anything", "anywhere",
-    "everyone", "everybody", "everything", "everywhere",
-    "no one", "nobody", "nothing", "nowhere",
-    "one", "ones", "other", "others", "another",
-    "each", "every", "either", "neither", "both", "all", "some", "any", "none",
-    "few", "many", "several", "much", "more", "most", "less", "least",
-    // Interrogative pronouns
-    "whoever", "whomever", "whatever", "whichever"
-  ];
-
-  const isBlacklisted = (entityName) => {
-    const lowerName = entityName.toLowerCase().trim();
-    // Check for exact match with blacklist (important for pronouns to avoid false positives)
-    return entityBlacklist.some(item => lowerName === item);
-  };
-
-  const enableLocationCards = getWTGBooleanSetting("Enable Generated Location Cards");
-
-  // Parse double-parentheses locations first
-  if (enableLocationCards) {
-    const doubleParenRegex = /(?<!\()\(\(([^)]+?)\)\)(?!\))/g;
-    let doubleParenMatch;
-    while ((doubleParenMatch = doubleParenRegex.exec(text)) !== null) {
-      const entity = doubleParenMatch[1];
-      if (entity.length >= 2) {
-        const sanitized = sanitizeEntityName(entity);
-        const title = normalizeNameCase(sanitized);
-
-        // Skip if blacklisted
-        if (isBlacklisted(title)) {
-          continue;
-        }
-
-        const keys = normalizeKeysFor(title);
-        const card = findOrCreateCard(title);
-        if (card) {
-          card.type = "location";
-          card.keys = keys.join(",");
-          // Always update entry with full input text
-          card.entry = `Location: ${title}. First mentioned in player input: ${fullInputText}`;
-          // Add timestamp if not present
-          if (!hasTimestamp(card)) {
-            addTimestampToCard(card, `${state.currentDate} ${state.currentTime}`);
-          }
-        }
+  const focusTags = extractFocusTags(modifiedText);
+  if (focusTags.length > 0) {
+    const data = getFocusData();
+    focusTags.forEach(tag => {
+      const list = data[tag.type] || [];
+      const existingIndex = list.findIndex(entry => entry.name.toLowerCase() === tag.name.toLowerCase());
+      let pinned = false;
+      if (existingIndex >= 0) {
+        pinned = list[existingIndex].pinned;
+        list.splice(existingIndex, 1);
       }
-    }
-  }
-
-  // Parse single-parentheses characters
-  const enableCharacterCards = getWTGBooleanSetting("Enable Generated Character Cards");
-  if (enableCharacterCards) {
-    const singleParenRegex = /(?<!\()\(([^)]+?)\)(?!\))/g;
-    let singleParenMatch;
-    while ((singleParenMatch = singleParenRegex.exec(text)) !== null) {
-      const entity = singleParenMatch[1];
-      if (entity.length >= 2) {
-        const sanitized = sanitizeEntityName(entity);
-        const title = normalizeNameCase(sanitized);
-
-        // Skip if blacklisted
-        if (isBlacklisted(title)) {
-          continue;
-        }
-
-        const keys = normalizeKeysFor(title);
-        const card = findOrCreateCard(title);
-        if (card) {
-          card.type = "character";
-          card.keys = keys.join(",");
-          // Always update entry with full input text
-          card.entry = `Character: ${title}. First mentioned in player input: ${fullInputText}`;
-          // Add timestamp if not present
-          if (!hasTimestamp(card)) {
-            addTimestampToCard(card, `${state.currentDate} ${state.currentTime}`);
-          }
-        }
-      }
-    }
-  }
-
-  // Debug mode: Show raw input with parentheses if enabled
-  const debugMode = getWTGBooleanSetting("Debug Mode");
-  if (debugMode) {
-    // Keep parentheses in the text for debugging
-  } else {
-    // Strip all ((...)) and (...) from the input text for normal mode
-    modifiedText = modifiedText.replace(/\(\(([^)]+?)\)\)/g, "$1");
-    modifiedText = modifiedText.replace(/\(([^)]+?)\)/g, "$1");
+      list.unshift({ name: tag.name, pinned });
+      data[tag.type] = pruneFocusList(list);
+    });
+    saveFocusData(data);
+    modifiedText = stripFocusTags(modifiedText);
   }
 
   // Detect triggers in player input and track mentions (only after proper time is set)
@@ -368,18 +273,11 @@ function WTG_Input(text) {
   return modifiedText;
 }
 
-function isOutfitCommandText(text) {
-  if (!text) {
-    return false;
-  }
-  return /^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/(?:wear|takeoff|undress|reloadoutfit|outfit|remove)\b/i.test(text);
-}
-
 function oracleInput(text) {
   if (!text) {
     return { text };
   }
-  if (isOutfitCommandText(text)) {
+  if (isCommandText(text)) {
     return { text };
   }
   const attemptRegex = /(?:^|\n)\s*>?\s*(.*)\b(try|tries|trying|attempt|attempts|attempting)\b/i;
@@ -409,7 +307,7 @@ function oracleInput(text) {
   if (state.oracle.action == info.actionCount) {
     if (state.oracle.frontMemory) {
       state.memory.frontMemory = state.oracle.frontMemory;
-      if (!isOutfitCommandText(text)) {
+      if (!isCommandText(text)) {
         text = `${text}\n${state.oracle.frontMemory}`.trim();
       }
     }
@@ -422,7 +320,7 @@ function oracleInput(text) {
     if (state.oracle.frontMemory) {
       state.memory.frontMemory = state.oracle.frontMemory;
       state.message = state.oracle.frontMemory;
-      if (!isOutfitCommandText(text)) {
+      if (!isCommandText(text)) {
         text = `${text}\n${state.oracle.frontMemory}`.trim();
       }
     }
