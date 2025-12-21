@@ -28,7 +28,7 @@ Copy each file into the matching AI Dungeon script tab:
 Outfit:
 
 - `/undress`
-- `/reloadoutfit`
+- `/reloadoutfit` (if started with default outfit will reset to that)
 - `/outfit`
 - `/remove "Item"` (exact match)
 - `/wear <category> "Item"`
