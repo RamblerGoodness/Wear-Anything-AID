@@ -360,7 +360,7 @@ function handleOutfitCommands(text) {
     const type = normalizeFocusType(promoteMatch[1]);
     const name = parseOutfitName(promoteMatch[2]);
     if (!type || !name) {
-      return { handled: true, text: "<< Usage: /promote <loc|obj> \"Name\" >>" };
+      return { handled: true, text: "<< Usage: /promote <loc|obj|char> \"Name\" >>" };
     }
     const created = promoteFocusEntry(type, name);
     if (created) {
@@ -384,7 +384,7 @@ function handleOutfitCommands(text) {
     const type = normalizeFocusType(forgetMatch[1]);
     const name = parseOutfitName(forgetMatch[2]);
     if (!type || !name) {
-      return { handled: true, text: "<< Usage: /forget <loc|obj> \"Name\" >>" };
+      return { handled: true, text: "<< Usage: /forget <loc|obj|char> \"Name\" >>" };
     }
     const removed = removeFocusEntry(type, name);
     return { handled: true, text: removed ? `<< Forgotten ${name} >>` : `<< Not found: ${name} >>` };
@@ -395,7 +395,7 @@ function handleOutfitCommands(text) {
     const type = normalizeFocusType(pinMatch[1]);
     const name = parseOutfitName(pinMatch[2]);
     if (!type || !name) {
-      return { handled: true, text: "<< Usage: /pin <loc|obj> \"Name\" >>" };
+      return { handled: true, text: "<< Usage: /pin <loc|obj|char> \"Name\" >>" };
     }
     const pinned = setFocusPinned(type, name, true);
     return { handled: true, text: pinned ? `<< Pinned ${name} >>` : `<< Not found: ${name} >>` };
@@ -406,7 +406,7 @@ function handleOutfitCommands(text) {
     const type = normalizeFocusType(unpinMatch[1]);
     const name = parseOutfitName(unpinMatch[2]);
     if (!type || !name) {
-      return { handled: true, text: "<< Usage: /unpin <loc|obj> \"Name\" >>" };
+      return { handled: true, text: "<< Usage: /unpin <loc|obj|char> \"Name\" >>" };
     }
     const unpinned = setFocusPinned(type, name, false);
     return { handled: true, text: unpinned ? `<< Unpinned ${name} >>` : `<< Not found: ${name} >>` };
@@ -965,6 +965,10 @@ function parseFocusEntry(entry) {
     if (!name) {
       return;
     }
+    const lowerName = name.toLowerCase();
+    if (lowerName === "none" || lowerName === "(none)" || lowerName === "empty") {
+      return;
+    }
     data[section].push({ name, pinned });
   });
   return data;
@@ -1055,7 +1059,7 @@ function setFocusPinned(type, name, pinned) {
     return false;
   }
   list[index].pinned = pinned;
-  data[type] = list;
+  data[type] = pruneFocusList(list);
   saveFocusData(data);
   return true;
 }
