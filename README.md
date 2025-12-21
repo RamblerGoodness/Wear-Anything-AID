@@ -81,7 +81,7 @@ Edit the `CI Settings` entry to control behavior:
 
 You can set a default outfit in Plot Essentials using:
 
-```
+```txt
 Outfit: Layer: White Shirt; Bottom: Jeans; Feet: Sneakers
 ```
 
