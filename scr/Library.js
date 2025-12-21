@@ -3186,7 +3186,7 @@ function updateCooldownCard() {
     entry += `Advance available after: ${advanceDate} ${advanceTime}\n`;
   }
 
-  cooldownCard.entry = entry.trim();
+  cooldownCard.entry = entry.trim() || "No active cooldowns.";
 }
 
 /**
