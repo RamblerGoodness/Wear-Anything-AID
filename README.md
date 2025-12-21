@@ -7,14 +7,14 @@ AI Dungeon script that tracks player outfits from input and output text, with op
 - Outfit tracking by category (dynamic categories allowed).
 - Command-driven outfit tracking.
 - Story card persistence for settings and outfit.
-- World Time Generator (WTG 2.0) with auto card support.
+- World Time Generator (WTG 2.0).
 - Immersive D20 outcomes for `try`/`attempt` actions.
 
 ## Included Scripts
 
 - Immersive D20 (original by SlumberingMage): <https://github.com/SlumberingMage/AID-Oracle/blob/main/distribution/oracle-lite-1.1-input.js>
 - Better Say Action <https://discord.com/channels/903327676884979802/1381678302238081158/1381678302238081158>
-- World Time Generator 2.0 (Auto Cards): <https://github.com/thisisasetuptomyrap-cmyk/World-Time-Generator-2.0>
+- World Time Generator 2.0: <https://github.com/thisisasetuptomyrap-cmyk/World-Time-Generator-2.0>
 
 ## Install
 

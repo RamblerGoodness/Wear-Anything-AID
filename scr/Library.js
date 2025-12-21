@@ -1569,9 +1569,6 @@ function getWTGSettingsCard() {
     settingsCard.keys = ""; // No keys - not included in AI context
     settingsCard.description = "World Time Generator Settings - Edit the values below to configure the system.";
     settingsCard.entry = `Time Duration Multiplier: 1.0
-Enable Generated Character Cards: true
-Enable Generated Location Cards: true
-Disable Generated Card Deletion: true
 Debug Mode: false
 Enable Dynamic Time: true
 Disable WTG Entirely: false`;
