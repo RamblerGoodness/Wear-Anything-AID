@@ -225,12 +225,13 @@ function handleOutfitCommands(text) {
     if (!item) {
       return { handled: true, text: "<< Missing outfit item >>" };
     }
+    const displayItem = normalizeItemName(item) || item;
     const user = getPrimaryUser();
     const removed = removeOutfitItemAny(user, item);
     if (removed) {
-      return { handled: true, text: `<< Removed ${item} >>` };
+      return { handled: true, text: `<< Removed ${displayItem} >>` };
     }
-    return { handled: true, text: `<< ${item} not found >>` };
+    return { handled: true, text: `<< ${displayItem} not found >>` };
   }
 
   if (text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/undress\b/i)) {
@@ -341,9 +342,13 @@ function parseOutfitCommandArgs(raw) {
     return result;
   }
 
-  const quoteMatches = [...text.matchAll(/"([^"]*)"/g)];
-  if (quoteMatches.length > 0) {
-    const lastQuote = quoteMatches[quoteMatches.length - 1];
+  const quoteRegex = /"([^"]*)"/g;
+  let lastQuote = null;
+  let match;
+  while ((match = quoteRegex.exec(text)) !== null) {
+    lastQuote = match;
+  }
+  if (lastQuote) {
     const item = lastQuote[1];
     const before = text.slice(0, lastQuote.index).trim();
     result.category = before.replace(/\s+$/, "").trim();
@@ -366,7 +371,21 @@ function parseOutfitCommandArgs(raw) {
 // Outfit
 // ------------------------------
 function normalizeItemName(name) {
-  return name.replace(/[.,!?]+$/g, "").replace(/\s+/g, " ").trim();
+  const cleaned = name.replace(/[.,!?]+$/g, "").replace(/\s+/g, " ").trim();
+  return titleCaseWords(cleaned);
+}
+
+function normalizeItemKey(name) {
+  return normalizeItemName(name).toLowerCase();
+}
+
+function titleCaseWords(text) {
+  return text.split(" ").map(word => {
+    if (!word) {
+      return word;
+    }
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  }).join(" ");
 }
 function createIfNoOutfitSC() {
   const ci = state.ci;
@@ -453,19 +472,22 @@ function parseOutfitEntry(entry) {
     if (!itemsString || itemsString.toLowerCase() === "empty" || itemsString.toLowerCase().startsWith("no ")) {
       return;
     }
-    const items = itemsString.split(",").map(item => item.trim()).filter(Boolean);
+    const seen = new Set();
+    const items = itemsString
+      .split(",")
+      .map(item => normalizeItemName(item))
+      .filter(Boolean)
+      .filter(item => {
+        const key = normalizeItemKey(item);
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      });
     outfit[category] = items;
   });
   return outfit;
-}
-
-function titleCase(text) {
-  return text.split(" ").map(w => {
-    if (!w) {
-      return w;
-    }
-    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-  }).join(" ");
 }
 
 function getDefaultOutfitFromPE() {
@@ -635,7 +657,7 @@ function addOutfitItemWithCategory(user, category, item) {
   if (!normalized) {
     return;
   }
-  const exists = outfit[category].some(i => normalizeItemName(i).toLowerCase() === normalized.toLowerCase());
+  const exists = outfit[category].some(i => normalizeItemKey(i) === normalizeItemKey(normalized));
   if (!exists) {
     outfit[category].push(normalized);
   }
@@ -646,8 +668,8 @@ function removeOutfitItemWithCategory(user, category, item) {
   if (!outfit[category]) {
     return;
   }
-  const normalized = normalizeItemName(item).toLowerCase();
-  const index = outfit[category].findIndex(i => normalizeItemName(i).toLowerCase() === normalized);
+  const normalized = normalizeItemKey(item);
+  const index = outfit[category].findIndex(i => normalizeItemKey(i) === normalized);
   if (index !== -1) {
     outfit[category].splice(index, 1);
   }
@@ -764,7 +786,7 @@ function buildOutfitSummary(user) {
 
 function removeOutfitItemAny(user, item) {
   const outfit = getOutfit(user);
-  const normalized = normalizeItemName(item).toLowerCase();
+  const normalized = normalizeItemKey(item);
   if (!normalized) {
     return false;
   }
@@ -772,7 +794,7 @@ function removeOutfitItemAny(user, item) {
   Object.keys(outfit).forEach(category => {
     const items = outfit[category] || [];
     const nextItems = items.filter(i => {
-      const n = normalizeItemName(i).toLowerCase();
+      const n = normalizeItemKey(i);
       const match = n === normalized;
       if (match) {
         removed = true;
@@ -829,7 +851,7 @@ function formatCategoryLabel(category) {
     if (!word) {
       return word;
     }
-    return word.charAt(0).toUpperCase() + word.slice(1);
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
   }).join(" ");
 }
 
