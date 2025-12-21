@@ -38,7 +38,8 @@ function CI_Input(text) {
     storeOutfitToSC();
     storeSettingsToSC();
     state.message = outfitCommandResult.text;
-    return "";
+    state.ci.suppressNextOutput = true;
+    return " ";
   }
 
   return text;
@@ -63,6 +64,11 @@ function CI_Output(text) {
   const ci = state.ci;
   if (!ci.enabled) {
     return text;
+  }
+
+  if (ci.suppressNextOutput) {
+    ci.suppressNextOutput = false;
+    return state.message || text;
   }
 
   ensureDefaultUser();
