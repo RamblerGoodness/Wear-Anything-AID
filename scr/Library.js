@@ -7799,7 +7799,7 @@ function AutoCards(inHook, inText, inStop) {
                     for (let i = 0; i < literalTitles.length; i++) {
                         // The pre-format set inclusion check helps avoid superfluous formatTitle calls
                         literalTitles[i] = (literalTitles[i]
-                            .replace(/["\.\?!;\(\):\[\]--{}]/g, " ")
+                            .replace(/["\.\?!;\(\):\[\]\-{}]/g, " ")
                             .trim()
                             .replace(/\s+/g, " ")
                             .replace(/^'\s*/, "")
@@ -9267,4 +9267,3 @@ function AutoCards(inHook, inText, inStop) {
 } AutoCards(null); function isolateLSIv2(code, log, text, stop) { const console = Object.freeze({log}); try { eval(code); return [null, text, stop]; } catch (error) { return [error, text, stop]; } }
 
 // Your other library scripts go here
-
