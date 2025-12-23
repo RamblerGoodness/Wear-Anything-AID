@@ -3,9 +3,21 @@
 // Every script needs a modifier function
 const modifier = (text) => {
   try {
+    const ci = state.ci || {};
+    const wasSuppress = !!ci.suppressNextOutput;
+    const wasPendingDescribe = !!ci.pendingDescribe;
     text = oracleOutput(text).text;
     text = WTG_Output(text);
     text = CI_Output(text);
+    if (!(wasSuppress || wasPendingDescribe) && typeof applyAutoCardsOutput === "function") {
+      text = applyAutoCardsOutput(text);
+      if (typeof ensureLeadingSpace === "function") {
+        text = ensureLeadingSpace(text);
+      }
+    }
+    if (typeof syncCharacterOutfitsWithCards === "function") {
+      syncCharacterOutfitsWithCards();
+    }
     return { text };
   } catch (err) {
     return { text };
@@ -105,21 +117,8 @@ function WTG_Output(text) {
 
   const isDescribeTurn = state.ci && state.ci.pendingDescribe;
 
-  const focusTags = extractFocusTags(text);
-  if (focusTags.length > 0) {
-    const data = getFocusData();
-    focusTags.forEach(tag => {
-      const list = data[tag.type] || [];
-      const existingIndex = list.findIndex(entry => entry.name.toLowerCase() === tag.name.toLowerCase());
-      let pinned = false;
-      if (existingIndex >= 0) {
-        pinned = list[existingIndex].pinned;
-        list.splice(existingIndex, 1);
-      }
-      list.unshift({ name: tag.name, pinned });
-      data[tag.type] = pruneFocusList(list);
-    });
-    saveFocusData(data);
+  if (typeof stripFocusTags === "function") {
+    text = stripFocusTags(text);
   }
 
   // Get the last action from history to determine action type

@@ -4,7 +4,13 @@
 const modifier = (text) => {
   text = WTG_Context(text);
   text = CI_Context(text);
-  return { text };
+  let stopVal = typeof stop !== "undefined" ? stop : undefined;
+  if (typeof applyAutoCardsContext === "function") {
+    const result = applyAutoCardsContext(text, stopVal);
+    text = result[0];
+    stopVal = result[1];
+  }
+  return stopVal === undefined ? { text } : { text, stop: stopVal };
 };
 
 function WTG_Context(text) {

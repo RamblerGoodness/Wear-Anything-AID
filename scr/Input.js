@@ -7,6 +7,9 @@ const modifier = (text) => {
     text = oracleInput(text).text;
     text = CI_Input(text);
     if (!(state.ci && state.ci.pendingDescribe)) {
+      if (typeof applyAutoCardsInput === "function") {
+        text = applyAutoCardsInput(text);
+      }
       text = betterSay(text).text;
     }
     return { text };
@@ -199,21 +202,7 @@ function WTG_Input(text) {
     modifiedText = messages.join("\n") + (modifiedText ? "\n" + modifiedText : "");
   }
 
-  const focusTags = extractFocusTags(modifiedText);
-  if (focusTags.length > 0) {
-    const data = getFocusData();
-    focusTags.forEach(tag => {
-      const list = data[tag.type] || [];
-      const existingIndex = list.findIndex(entry => entry.name.toLowerCase() === tag.name.toLowerCase());
-      let pinned = false;
-      if (existingIndex >= 0) {
-        pinned = list[existingIndex].pinned;
-        list.splice(existingIndex, 1);
-      }
-      list.unshift({ name: tag.name, pinned });
-      data[tag.type] = pruneFocusList(list);
-    });
-    saveFocusData(data);
+  if (typeof stripFocusTags === "function") {
     modifiedText = stripFocusTags(modifiedText);
   }
 
