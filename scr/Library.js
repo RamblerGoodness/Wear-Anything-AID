@@ -6794,7 +6794,7 @@ function AutoCards(inHook, inText, inStop) {
         #constant;
         constructor(...args) {
             if (args.length !== 0) {
-                this.constructor.#throwError([[(args.length === 1), "Const cannot be instantiated with a parameter"], ["Const cannot be instantiated with parameters"]]);
+                this.constructor.throwError([[(args.length === 1), "Const cannot be instantiated with a parameter"], ["Const cannot be instantiated with parameters"]]);
             } else {
                 O.f(this);
                 return this;
@@ -6802,41 +6802,41 @@ function AutoCards(inHook, inText, inStop) {
         }
         declare(...args) {
             if (args.length !== 0) {
-                this.constructor.#throwError([[(args.length === 1), "Instances of Const cannot be declared with a parameter"], ["Instances of Const cannot be declared with parameters"]]);
+                this.constructor.throwError([[(args.length === 1), "Instances of Const cannot be declared with a parameter"], ["Instances of Const cannot be declared with parameters"]]);
             } else if (this.#constant === undefined) {
                 this.#constant = null;
                 return this;
             } else if (this.#constant === null) {
-                this.constructor.#throwError("Instances of Const cannot be redeclared");
+                this.constructor.throwError("Instances of Const cannot be redeclared");
             } else {
-                this.constructor.#throwError("Instances of Const cannot be redeclared after initialization");
+                this.constructor.throwError("Instances of Const cannot be redeclared after initialization");
             }
         }
         initialize(...args) {
             if (args.length !== 1) {
-                this.constructor.#throwError([[(args.length === 0), "Instances of Const cannot be initialized without a parameter"], ["Instances of Const cannot be initialized with multiple parameters"]]);
+                this.constructor.throwError([[(args.length === 0), "Instances of Const cannot be initialized without a parameter"], ["Instances of Const cannot be initialized with multiple parameters"]]);
             } else if (this.#constant === null) {
                 this.#constant = [args[0]];
                 return this;
             } else if (this.#constant === undefined) {
-                this.constructor.#throwError("Instances of Const cannot be initialized before declaration");
+                this.constructor.throwError("Instances of Const cannot be initialized before declaration");
             } else {
-                this.constructor.#throwError("Instances of Const cannot be reinitialized");
+                this.constructor.throwError("Instances of Const cannot be reinitialized");
             }
         }
         read(...args) {
             if (args.length !== 0) {
-                this.constructor.#throwError([[(args.length === 1), "Instances of Const cannot be read with a parameter"], ["Instances of Const cannot read with any parameters"]]);
+                this.constructor.throwError([[(args.length === 1), "Instances of Const cannot be read with a parameter"], ["Instances of Const cannot read with any parameters"]]);
             } else if (Array.isArray(this.#constant)) {
                 return this.#constant[0];
             } else if (this.#constant === null) {
-                this.constructor.#throwError("Despite prior declaration, instances of Const cannot be read before initialization");
+                this.constructor.throwError("Despite prior declaration, instances of Const cannot be read before initialization");
             } else {
-                this.constructor.#throwError("Instances of Const cannot be read before initialization");
+                this.constructor.throwError("Instances of Const cannot be read before initialization");
             }
         }
         // An error condition is paired with an error message [condition, message], call #throwError with an array of pairs to throw the message corresponding with the first true condition [[cndtn1, msg1], [cndtn2, msg2], [cndtn3, msg3], ...] The first conditionless array element always evaluates to true ('else')
-        static #throwError(...args) {
+        static throwError(...args) {
             // Look, I thought I was going to use this more at the time okay
             const [conditionalMessagesTable] = args;
             const codomain = new Const().declare();
@@ -6856,10 +6856,10 @@ function AutoCards(inHook, inText, inStop) {
                             ) {
                                 codomain.initialize(pair[0]);
                             } else {
-                                Const.#throwError("Const.#throwError encountered an invalid array element of conditionalMessagesTable");
+                                Const.throwError("Const.throwError encountered an invalid array element of conditionalMessagesTable");
                             }
                         } else {
-                            Const.#throwError("Const.#throwError encountered a non-array element within conditionalMessagesTable");
+                            Const.throwError("Const.throwError encountered a non-array element within conditionalMessagesTable");
                         }
                         return codomain.read();
                     });
@@ -6870,19 +6870,19 @@ function AutoCards(inHook, inText, inStop) {
                             codomain.initialize(chosenPair[1]);
                         }
                     } else {
-                        codomain.initialize("Const.#throwError was not called with any true conditions");
+                        codomain.initialize("Const.throwError was not called with any true conditions");
                     }
                 } else if (typeof conditionalMessagesTable === "string") {
                     codomain.initialize(conditionalMessagesTable);
                 } else {
-                    codomain.initialize("Const.#throwError could not parse the given argument");
+                    codomain.initialize("Const.throwError could not parse the given argument");
                 }
                 return codomain.read();
             })()));
             if (error.stack) {
                 codomain.initialize(error.stack
                     .replace(/\(<isolated-vm>:/gi, "(")
-                    .replace(/Error:|at\s*(?:#throwError|Const.(?:declare|initialize|read)|new\s*Const)\s*\(\d+:\d+\)/gi, "")
+                    .replace(/Error:|at\s*(?:throwError|Const.(?:declare|initialize|read)|new\s*Const)\s*\(\d+:\d+\)/gi, "")
                     .replace(/AutoCards\s*\((\d+):(\d+)\)\s*at\s*<isolated-vm>:\d+:\d+\s*$/i, "AutoCards ($1:$2)")
                     .trim()
                     .replace(/\s+/g, " ")
