@@ -44,6 +44,7 @@ function CI_Input(text) {
     return "<< Outfit command error >>";
   }
   if (outfitCommandResult.handled) {
+    applyCommandTimeAdvance(text, outfitCommandResult);
     storeOutfitToSC();
     storeSettingsToSC();
     if (outfitCommandResult.aiPrompt) {
@@ -58,6 +59,95 @@ function CI_Input(text) {
   }
 
   return text;
+}
+
+function applyCommandTimeAdvance(text, outfitCommandResult) {
+  if (!outfitCommandResult || !outfitCommandResult.handled) {
+    return;
+  }
+  if (getWTGBooleanSetting("Disable WTG Entirely")) {
+    return;
+  }
+  const commandName = getCommandNameFromText(text);
+  const bucket = getCommandTimeBucket(commandName);
+  if (!bucket || bucket === "no") {
+    return;
+  }
+  if (isCommandFailureMessage(outfitCommandResult.text)) {
+    return;
+  }
+  const minutes = getCommandTimeMinutes(bucket);
+  if (!minutes || minutes <= 0) {
+    return;
+  }
+  state.turnTime = state.turnTime || { years: 0, months: 0, days: 0, hours: 0, minutes: 0, seconds: 0 };
+  state.turnTime = addToTurnTime(state.turnTime, { minutes });
+  const { currentDate, currentTime } = computeCurrent(state.startingDate, state.startingTime, state.turnTime);
+  state.currentDate = currentDate;
+  state.currentTime = currentTime;
+  state.changed = true;
+}
+
+function getCommandNameFromText(text) {
+  if (!text) {
+    return "";
+  }
+  const match = text.match(/^\s*(?:-?\s*>\s*)?(?:You\s+|I\s+)?\/([a-z]+)/i);
+  return match ? match[1].toLowerCase() : "";
+}
+
+function getCommandTimeBucket(commandName) {
+  switch (commandName) {
+    case "wear":
+    case "takeoff":
+    case "remove":
+      return "small";
+    case "loadoutfit":
+      return "medium";
+    case "undress":
+      return "large";
+    case "outfit":
+    case "reloadoutfit":
+    case "mark":
+    case "pin":
+    case "unpin":
+    case "forget":
+    case "promote":
+    case "saveoutfit":
+    case "deleteoutfit":
+      return "no";
+    default:
+      return "no";
+  }
+}
+
+function getCommandTimeMinutes(bucket) {
+  const ci = state.ci || {};
+  if (bucket === "small") {
+    return ci.timeSmall || 0;
+  }
+  if (bucket === "medium") {
+    return ci.timeMedium || 0;
+  }
+  if (bucket === "large") {
+    return ci.timeLarge || 0;
+  }
+  return ci.timeNoTime || 0;
+}
+
+function isCommandFailureMessage(message) {
+  if (!message) {
+    return true;
+  }
+  const lowered = message.toLowerCase();
+  if (lowered.includes("<< usage:")) return true;
+  if (lowered.includes("<< missing")) return true;
+  if (lowered.includes("not found")) return true;
+  if (lowered.includes("failed")) return true;
+  if (lowered.includes("unknown outfit command")) return true;
+  if (lowered.includes("reserved outfit name")) return true;
+  if (lowered.includes("outfit name in use")) return true;
+  return false;
 }
 
 // Context Hook
@@ -151,6 +241,18 @@ function initCI() {
   if (ci.describeOnlyIfEmpty === undefined) {
     ci.describeOnlyIfEmpty = false;
   }
+  if (ci.timeNoTime === undefined) {
+    ci.timeNoTime = 0;
+  }
+  if (ci.timeSmall === undefined) {
+    ci.timeSmall = 1;
+  }
+  if (ci.timeMedium === undefined) {
+    ci.timeMedium = 5;
+  }
+  if (ci.timeLarge === undefined) {
+    ci.timeLarge = 10;
+  }
 }
 
 function createSettingsCard() {
@@ -169,6 +271,10 @@ function createSettingsCard() {
       "describeMaxChars = 420",
       "describeMode = overwrite|append",
       "describeOnlyIfEmpty = true|false",
+      "timeNoTime = 0",
+      "timeSmall = 1",
+      "timeMedium = 5",
+      "timeLarge = 10",
       "alias boots = feet",
       "",
       "Commands:",
@@ -215,7 +321,7 @@ function storeSettingsToSC() {
   const ci = state.ci;
   const existingLines = (settingsSC.entry || "").split("\n");
   const preserved = existingLines.filter(line => {
-    return !line.match(/^\s*(enabled|injectToAN|focusMaxEntries|autoDescribeOnPromote|describeTurns|describeMaxSentences|describeMaxChars|describeMode|describeOnlyIfEmpty)\s*=/i);
+    return !line.match(/^\s*(enabled|injectToAN|focusMaxEntries|autoDescribeOnPromote|describeTurns|describeMaxSentences|describeMaxChars|describeMode|describeOnlyIfEmpty|timeNoTime|timeSmall|timeMedium|timeLarge)\s*=/i);
   }).filter(line => line.trim() !== "");
   settingsSC.entry = [
     `enabled = ${String(ci.enabled)}`,
@@ -227,6 +333,10 @@ function storeSettingsToSC() {
     `describeMaxChars = ${String(ci.describeMaxChars)}`,
     `describeMode = ${String(ci.describeMode)}`,
     `describeOnlyIfEmpty = ${String(ci.describeOnlyIfEmpty)}`,
+    `timeNoTime = ${String(ci.timeNoTime)}`,
+    `timeSmall = ${String(ci.timeSmall)}`,
+    `timeMedium = ${String(ci.timeMedium)}`,
+    `timeLarge = ${String(ci.timeLarge)}`,
     ...preserved
   ].join("\n");
 }
@@ -273,6 +383,22 @@ function loadSettingsFromSC() {
   const describeEmptyMatch = settingsSC.entry.match(/describeOnlyIfEmpty\s*=\s*(true|false)/i);
   if (describeEmptyMatch) {
     ci.describeOnlyIfEmpty = describeEmptyMatch[1].toLowerCase() === "true";
+  }
+  const timeNoTimeMatch = settingsSC.entry.match(/timeNoTime\s*=\s*(\d+)/i);
+  if (timeNoTimeMatch) {
+    ci.timeNoTime = Math.max(0, parseInt(timeNoTimeMatch[1], 10));
+  }
+  const timeSmallMatch = settingsSC.entry.match(/timeSmall\s*=\s*(\d+)/i);
+  if (timeSmallMatch) {
+    ci.timeSmall = Math.max(0, parseInt(timeSmallMatch[1], 10));
+  }
+  const timeMediumMatch = settingsSC.entry.match(/timeMedium\s*=\s*(\d+)/i);
+  if (timeMediumMatch) {
+    ci.timeMedium = Math.max(0, parseInt(timeMediumMatch[1], 10));
+  }
+  const timeLargeMatch = settingsSC.entry.match(/timeLarge\s*=\s*(\d+)/i);
+  if (timeLargeMatch) {
+    ci.timeLarge = Math.max(0, parseInt(timeLargeMatch[1], 10));
   }
   parseAliasSettings(settingsSC.entry);
 }
